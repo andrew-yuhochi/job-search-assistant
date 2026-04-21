@@ -1,0 +1,97 @@
+TASK-006 — Normalizer + URL Health Check
+Demo Artifact
+Date: 2026-04-21
+==========================================================================
+
+SECTION 1: pytest output
+--------------------------------------------------------------------------
+
+============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0
+rootdir: /Users/andrew.yu/personal/projects/job-search-assistant
+plugins: mock-3.15.1, anyio-4.13.0
+collected 19 items
+
+tests/test_normalizer.py::test_all_fixtures_normalize_without_error PASSED [  5%]
+tests/test_normalizer.py::test_duplicate_pair_produces_matching_normalized_fields PASSED [ 10%]
+tests/test_normalizer.py::test_relative_date_3_days_ago PASSED           [ 15%]
+tests/test_normalizer.py::test_relative_date_posted_today PASSED         [ 21%]
+tests/test_normalizer.py::test_relative_date_2_hours_ago PASSED          [ 26%]
+tests/test_normalizer.py::test_check_url_returns_false_for_dead_url PASSED [ 31%]
+tests/test_normalizer.py::test_check_url_returns_false_for_connection_error PASSED [ 36%]
+tests/test_normalizer.py::test_check_url_returns_true_for_200_response PASSED [ 42%]
+tests/test_normalizer.py::test_check_url_returns_false_for_404_response PASSED [ 47%]
+tests/test_normalizer.py::test_url_hostname_extraction PASSED            [ 52%]
+tests/test_normalizer.py::test_greenhouse_url_hostname_and_job_id PASSED [ 57%]
+tests/test_normalizer.py::test_indeed_job_id_extracted_from_query_param PASSED [ 63%]
+tests/test_normalizer.py::test_seniority_senior_inferred PASSED          [ 68%]
+tests/test_normalizer.py::test_seniority_principal_inferred PASSED       [ 73%]
+tests/test_normalizer.py::test_seniority_unknown_for_plain_title PASSED  [ 78%]
+tests/test_normalizer.py::test_iso_date_parses_correctly PASSED          [ 84%]
+tests/test_normalizer.py::test_is_remote_true_for_remote_location PASSED [ 89%]
+tests/test_normalizer.py::test_is_remote_false_for_vancouver_location PASSED [ 94%]
+tests/test_normalizer.py::test_normalize_text_lowercases_and_strips_punctuation PASSED [100%]
+
+============================== 19 passed in 0.11s ==============================
+
+
+SECTION 2: Python REPL — Normalizer.normalize() on 3 fixtures (input/output diff)
+--------------------------------------------------------------------------
+
+Fixture 1 — jf-001: "Senior Data Scientist" at Acme Corp (LinkedIn, ISO date)
+
+INPUT  id          : jf-001
+INPUT  title       : 'Senior Data Scientist'
+INPUT  company     : 'Acme Corp'
+INPUT  source      : linkedin
+INPUT  url         : https://www.linkedin.com/jobs/view/3901234001
+INPUT  posted_date : '2026-04-18'
+
+OUTPUT job_id           : f2ea831648bbcb987452d5ebe20af2dd047ef56908770893395c5af29092a828
+OUTPUT title_normalized : 'senior data scientist'
+OUTPUT company_normalized: 'acme corp'
+OUTPUT url_hostname     : 'www.linkedin.com'
+OUTPUT source_job_id    : '3901234001'
+OUTPUT posted_at        : 2026-04-18 00:00:00+00:00
+OUTPUT seniority        : senior
+OUTPUT is_remote        : False
+
+------------------------------------------------------------
+Fixture 2 — jf-005: "Data Engineer" at Hootsuite (Google/Greenhouse URL)
+
+INPUT  id          : jf-005
+INPUT  title       : 'Data Engineer'
+INPUT  company     : 'Hootsuite'
+INPUT  source      : google
+INPUT  url         : https://boards.greenhouse.io/hootsuite/jobs/5550001
+INPUT  posted_date : '2026-04-16'
+
+OUTPUT job_id           : 5f1479edfd202c0e7d84eef65fc78b502a90c4bdfa1191461aaec058c3c83d6f
+OUTPUT title_normalized : 'data engineer'
+OUTPUT company_normalized: 'hootsuite'
+OUTPUT url_hostname     : 'boards.greenhouse.io'
+OUTPUT source_job_id    : '5550001'
+OUTPUT posted_at        : 2026-04-16 00:00:00+00:00
+OUTPUT seniority        : unknown
+OUTPUT is_remote        : False
+
+------------------------------------------------------------
+Fixture 3 — jf-006: "Senior Data Engineer" at "Fintech Startup — stealth" (null salary, remote, LinkedIn)
+
+INPUT  id          : jf-006
+INPUT  title       : 'Senior Data Engineer'
+INPUT  company     : 'Fintech Startup — stealth'
+INPUT  source      : linkedin
+INPUT  url         : https://www.linkedin.com/jobs/view/3901234006
+INPUT  posted_date : '2026-04-14'
+
+OUTPUT job_id           : 04f7c93774f522b36a0ddcc13af1a7a4734b1ac16f9c37ef2c50087f89efb2e4
+OUTPUT title_normalized : 'senior data engineer'
+OUTPUT company_normalized: 'fintech startup stealth'
+OUTPUT url_hostname     : 'www.linkedin.com'
+OUTPUT source_job_id    : '3901234006'
+OUTPUT posted_at        : 2026-04-14 00:00:00+00:00
+OUTPUT seniority        : senior
+OUTPUT is_remote        : True
+
+All 3 fixtures normalized successfully.
