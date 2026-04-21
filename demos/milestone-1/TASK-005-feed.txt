@@ -1,0 +1,6 @@
+Fixture jobs loaded: 15
+  - [jf-001] Senior Data Scientist @ Acme Corp (linkedin) specialty=data_scientist
+  - [jf-002] Data Scientist, Senior @ Acme Corp (indeed) specialty=data_scientist
+  - [jf-003] ML Engineer @ Watershed AI (linkedin) specialty=ml_engineer
+...
+Streamlit app ready to launch: MODE=prototype streamlit run src/app.py
