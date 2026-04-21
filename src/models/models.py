@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +157,10 @@ class NormalizedJobPosting(BaseModel):
     - Location type flag (is_remote)
     - Normalized title / company strings
     - Extracted source_job_id and url_hostname
+
+    extra='allow' permits FilterService to attach `badge_flags` dynamically.
     """
+    model_config = ConfigDict(extra="allow")
     # Identity
     id: str
     user_id: str = "local"
@@ -206,7 +209,12 @@ class JobPosting(BaseModel):
 
     Dedup fields (duplicate_of, url_is_dead) are populated by DedupService
     and the URL health check respectively.
+
+    extra='allow' permits FilterService to attach `badge_flags` dynamically
+    (e.g. 'Salary unknown', 'Size unknown') without requiring a schema change.
     """
+    model_config = ConfigDict(extra="allow")
+
     # Primary key
     job_id: str = Field(..., description="sha256(source + url) — deterministic dedup key")
     user_id: str = "local"

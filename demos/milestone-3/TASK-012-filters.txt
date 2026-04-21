@@ -1,0 +1,100 @@
+TASK-012: SalaryExtractor + SeniorityInferrer + FilterService
+Demo Artifact — Generated 2026-04-21
+============================================================
+
+## Test Suite Output
+
+$ pytest tests/test_filter.py -v
+
+============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0
+collected 41 items
+
+tests/test_filter.py::TestSalaryExtractor::test_dollar_k_shorthand PASSED
+tests/test_filter.py::TestSalaryExtractor::test_dollar_full_with_comma PASSED
+tests/test_filter.py::TestSalaryExtractor::test_range_k_shorthand PASSED
+tests/test_filter.py::TestSalaryExtractor::test_range_full_numbers PASSED
+tests/test_filter.py::TestSalaryExtractor::test_range_to_keyword PASSED
+tests/test_filter.py::TestSalaryExtractor::test_hourly_rate_converted PASSED
+tests/test_filter.py::TestSalaryExtractor::test_hourly_per_hour PASSED
+tests/test_filter.py::TestSalaryExtractor::test_cad_suffix PASSED
+tests/test_filter.py::TestSalaryExtractor::test_no_salary_returns_unknown PASSED
+tests/test_filter.py::TestSalaryExtractor::test_empty_string_returns_unknown PASSED
+tests/test_filter.py::TestSalaryExtractor::test_large_k_range PASSED
+tests/test_filter.py::TestSalaryExtractor::test_noise_numbers_ignored PASSED
+tests/test_filter.py::TestSalaryExtractor::test_low_salary_rejected PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_principal_data_scientist PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_senior_ml_engineer PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_junior_analyst PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_director PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_staff_engineer PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_vp PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_unknown_title PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_jobspy_level_override PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_sr_abbreviation PASSED
+tests/test_filter.py::TestSeniorityInferrer::test_jr_abbreviation PASSED
+tests/test_filter.py::TestFilterServiceLocation::test_vancouver_only_excludes_toronto PASSED
+tests/test_filter.py::TestFilterServiceLocation::test_vancouver_only_keeps_vancouver PASSED
+tests/test_filter.py::TestFilterServiceLocation::test_remote_passes_location_filter PASSED
+tests/test_filter.py::TestFilterServiceSeniority::test_principal_excluded PASSED
+tests/test_filter.py::TestFilterServiceSeniority::test_senior_passes_when_max_is_staff PASSED
+tests/test_filter.py::TestFilterServiceSeniority::test_unknown_seniority_always_passes PASSED
+tests/test_filter.py::TestFilterServiceSeniority::test_director_excluded PASSED
+tests/test_filter.py::TestFilterServiceSalary::test_salary_below_floor_excluded PASSED
+tests/test_filter.py::TestFilterServiceSalary::test_salary_above_floor_kept PASSED
+tests/test_filter.py::TestFilterServiceSalary::test_unknown_salary_passes_with_badge PASSED
+tests/test_filter.py::TestFilterServiceSalary::test_range_max_used_for_floor PASSED
+tests/test_filter.py::TestFilterServiceCompanySize::test_indeed_micro_size_excluded PASSED
+tests/test_filter.py::TestFilterServiceCompanySize::test_linkedin_unknown_size_passes_with_badge PASSED
+tests/test_filter.py::TestFilterServiceCompanySize::test_large_company_not_excluded PASSED
+tests/test_filter.py::TestFilterServiceCompanySize::test_no_size_filter_passes_all PASSED
+tests/test_filter.py::TestFilterServiceCombined::test_empty_list_returns_empty PASSED
+tests/test_filter.py::TestFilterServiceCombined::test_no_config_passes_all PASSED
+tests/test_filter.py::TestFilterServiceCombined::test_both_salary_and_size_unknown_pass PASSED
+
+41 passed in 0.12s
+
+
+## Before/After Filter Table — Synthetic 10-Posting Dataset
+
+FilterConfig applied:
+  - locations = ["vancouver"]    (Vancouver only; allow_remote=True)
+  - min_salary_cad = 120,000
+  - company_size_exclude = ["1 to 10"]
+  - max_seniority = "principal"  (exclude principal and above)
+
++----+-------------------------------------+--------------------+-------------------+---------+-----------+----------+------------+---------------------+
+| #  | Title                               | Location           | Salary            | Seniority | Size Label | OUTCOME | Badges     | Exclusion Reason    |
++----+-------------------------------------+--------------------+-------------------+---------+-----------+----------+------------+---------------------+
+|  1 | Senior Data Scientist               | Vancouver, BC      | $130K             | senior  | 51-200    | KEPT    |            |                     |
+|  2 | Data Engineer                       | Toronto, ON        | $125K             | mid     | 201-500   | EXCLUDED|            | Location not in ['vancouver'] |
+|  3 | ML Engineer                         | Remote             | $115K             | mid     | 1 to 10   | EXCLUDED|            | Size '1 to 10' in exclude list |
+|  4 | Principal Data Scientist            | Vancouver, BC      | $180K             | principal| 501-1000  | EXCLUDED|            | Seniority 'principal' meets or exceeds max 'principal' |
+|  5 | Data Analyst                        | Vancouver, BC      | $90K              | mid     | 51-200    | EXCLUDED|            | Salary $90,000 below floor $120,000 |
+|  6 | Data Scientist                      | Vancouver, BC      | Unknown           | unknown | 201-500   | KEPT    | Salary unknown |                     |
+|  7 | ML Engineer                         | Remote             | $145K             | senior  | (none)    | KEPT    | Size unknown |                     |
+|  8 | Senior Data Engineer                | Vancouver, BC      | $135K–$155K       | senior  | 1,001-5,000| KEPT   |            |                     |
+|  9 | Data Scientist                      | Vancouver, BC      | Unknown           | unknown | (none)    | KEPT    | Salary unknown, Size unknown | |
+| 10 | Staff Data Scientist                | Vancouver, BC      | $160K             | staff   | 1 to 10   | EXCLUDED|            | Size '1 to 10' in exclude list |
++----+-------------------------------------+--------------------+-------------------+---------+-----------+----------+------------+---------------------+
+
+RESULT: 5 kept, 5 excluded
+
+Kept postings (5):
+  1. Senior Data Scientist     — Vancouver, BC     — $130K          — senior     — 51-200
+  6. Data Scientist            — Vancouver, BC     — Unknown        — unknown    — 201-500        [Salary unknown]
+  7. ML Engineer               — Remote            — $145K          — senior     — (none)         [Size unknown]
+  8. Senior Data Engineer      — Vancouver, BC     — $135K–$155K    — senior     — 1,001-5,000
+  9. Data Scientist            — Vancouver, BC     — Unknown        — unknown    — (none)         [Salary unknown] [Size unknown]
+
+Excluded postings (5):
+  2. Data Engineer          — Toronto, ON   — Location not in filter
+  3. ML Engineer            — Remote        — Company size '1 to 10' in exclude list
+  4. Principal Data Scientist — Vancouver    — Seniority 'principal' meets or exceeds max
+  5. Data Analyst           — Vancouver, BC — Salary $90,000 below $120,000 floor
+ 10. Staff Data Scientist   — Vancouver, BC — Company size '1 to 10' in exclude list
+
+Critical design rules verified:
+  - Posting #6: salary unknown → PASSED with badge "Salary unknown" (never excluded)
+  - Posting #7: size unknown  → PASSED with badge "Size unknown"  (never excluded)
+  - Posting #9: both unknown  → PASSED with BOTH badges (never excluded)
