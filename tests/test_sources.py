@@ -340,6 +340,62 @@ def test_registry_captures_rate_limit_as_status():
 
 
 # ---------------------------------------------------------------------------
+# Test 15 — LinkedInSource.fetch() returns list of RawJobPosting instances
+# ---------------------------------------------------------------------------
+
+
+def test_linkedin_fetch_returns_raw_job_postings():
+    source = LinkedInSource()
+    row = _make_df_row(id="li001", title="Data Scientist", company="ACME Corp")
+    mock_df = pd.DataFrame([row])
+
+    with patch("src.sources.linkedin.scrape_jobs", return_value=mock_df):
+        result = source.fetch(SearchQuery(search_term="data scientist", results_wanted=5))
+
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert all(isinstance(p, RawJobPosting) for p in result)
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — IndeedSource.fetch() returns list of RawJobPosting instances
+# ---------------------------------------------------------------------------
+
+
+def test_indeed_fetch_returns_raw_job_postings():
+    source = IndeedSource()
+    row = _make_df_row(id="in001", title="Data Analyst", company="LocalCo")
+    mock_df = pd.DataFrame([row])
+
+    with patch("src.sources.indeed.scrape_jobs", return_value=mock_df):
+        result = source.fetch(SearchQuery(search_term="data analyst", results_wanted=5))
+
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert all(isinstance(p, RawJobPosting) for p in result)
+
+
+# ---------------------------------------------------------------------------
+# Test 17 — GoogleJobsSource.fetch() returns list of RawJobPosting instances
+# ---------------------------------------------------------------------------
+
+
+def test_google_jobs_fetch_returns_raw_job_postings():
+    source = GoogleJobsSource(api_key="test_key")
+    mock_search_instance = MagicMock()
+    mock_search_instance.get_dict.return_value = {
+        "jobs_results": [_make_serpapi_job(title="ML Engineer", company_name="TechCo")]
+    }
+
+    with patch("src.sources.google_jobs.GoogleSearch", return_value=mock_search_instance):
+        result = source.fetch(SearchQuery(search_term="ml engineer", results_wanted=5))
+
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert all(isinstance(p, RawJobPosting) for p in result)
+
+
+# ---------------------------------------------------------------------------
 # Live smoke test — skippable via SKIP_LIVE=1
 # ---------------------------------------------------------------------------
 
