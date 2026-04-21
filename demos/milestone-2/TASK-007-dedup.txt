@@ -1,0 +1,48 @@
+TASK-007 DedupService Demo — Duplicate Pairs in SQLite
+============================================================
+
+SQL Query:
+  SELECT j.job_id, j.title, j.company, j.duplicate_of,
+         d.match_type, d.match_score
+  FROM jobs j
+  JOIN duplicates d ON j.job_id = d.duplicate_post_id;
+
+Results:
+
+  job_id:       81807ae55e934c1e3be7861b6fad1f92973d96b1e60e0a47601080d578d52553
+  title:        Data Scientist, Senior
+  company:      Acme Corp
+  duplicate_of: f2ea831648bbcb987452d5ebe20af2dd047ef56908770893395c5af29092a828
+  match_type:   fuzzy_title_company
+  match_score:  1.0
+
+  job_id:       76bb3762defead98e22f63704748ea51cd07c1d88119bdc07498d54b0e98dc12
+  title:        Principal Data Scientist
+  company:      Loblaws Digital
+  duplicate_of: 9f8892f7506166e3232b3f98d357c74b044b6e4d173d7e6be362a8a1a7211ac3
+  match_type:   url_exact
+  match_score:  None
+
+Canonical postings for each duplicate:
+
+  Duplicate: "Data Scientist, Senior" @ Acme Corp
+  Canonical: "Senior Data Scientist" @ Acme Corp
+  Detection: fuzzy_title_company (score=1.0)
+
+  Duplicate: "Principal Data Scientist" @ Loblaws Digital
+  Canonical: "Applied Data Scientist — NLP" @ Coveo
+  Detection: url_exact (score=None)
+
+Acceptance criteria check:
+  Total jobs in DB: 17  (fixtures: 17)
+  Canonical posts:  15
+  Duplicate records:2
+
+  [PASS] 2 intentional duplicate pairs detected
+  [PASS] jf-016/jf-017 (Clio Technologies NLP vs CV) NOT flagged
+  [PASS] url_exact pair detected (jf-009/jf-010 — same LinkedIn URL)
+  [PASS] fuzzy_title_company pair detected (jf-001/jf-002 — Acme Corp)
+  [PASS] canonical (first-seen) post has duplicate_of = NULL
+  [PASS] duplicate post has duplicate_of set to canonical job_id
+
+pytest tests/test_dedup.py: 17 passed

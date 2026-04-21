@@ -193,5 +193,31 @@
     "posted_date": "2026-04-17",
     "user_id": "local",
     "expected_specialty": "data_engineer"
+  },
+  {
+    "id": "jf-016",
+    "title": "Senior Data Scientist — NLP",
+    "company": "Clio Technologies",
+    "location": "Vancouver, BC",
+    "source": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/3901234016",
+    "description": "Clio is the world's leading legal technology company. We are seeking a Senior Data Scientist with NLP expertise to join our AI research team.\n\nResponsibilities:\n- Fine-tune large language models (GPT-4, LLaMA) for legal document analysis and contract review tasks\n- Build retrieval-augmented generation pipelines using dense bi-encoder retrieval over legal corpora\n- Design and run offline evaluation suites using NDCG and human-annotated legal datasets\n- Research transformer architectures for long-document understanding (contract clauses, legal briefs)\n- Work closely with product teams to ship NLP features into Clio's practice management SaaS platform\n- Publish internal research notes and contribute to external venues (ACL, EMNLP)\n\nRequirements:\n- PhD or Master's in NLP or equivalent industry experience with transformers\n- PyTorch, HuggingFace Transformers; experience with RAG systems\n- Familiarity with legal or regulatory text is a strong asset\n\nSalary: $130,000 – $155,000 CAD.",
+    "salary_raw": "$130,000 – $155,000 CAD",
+    "posted_date": "2026-04-20",
+    "user_id": "local",
+    "expected_specialty": "data_scientist"
+  },
+  {
+    "id": "jf-017",
+    "title": "Senior Data Scientist — Computer Vision",
+    "company": "Clio Technologies",
+    "location": "Vancouver, BC",
+    "source": "linkedin",
+    "url": "https://www.linkedin.com/jobs/view/3901234017",
+    "description": "Clio Technologies is expanding its AI capabilities. We are looking for a Senior Data Scientist focused on Computer Vision to support document digitization and intelligent optical character recognition for legal filings.\n\nResponsibilities:\n- Design and train object detection and segmentation models to extract structure from scanned legal documents\n- Build automated OCR and layout analysis pipelines using PyTorch and Detectron2\n- Develop active learning workflows to iteratively improve annotation quality on court filing images\n- Integrate vision model inference into Clio's document processing microservices using TorchServe\n- Collaborate with the product team to define model quality thresholds for production deployment\n- Run ablation studies to measure the trade-off between inference speed and accuracy for on-device OCR\n\nRequirements:\n- 4+ years ML experience with a CV focus; proficient in PyTorch and torchvision\n- Experience with OCR toolkits (Tesseract, PaddleOCR) and document layout analysis\n- Docker and Kubernetes experience for inference pipeline deployment\n\nSalary: $125,000 – $150,000 CAD.",
+    "salary_raw": "$125,000 – $150,000 CAD",
+    "posted_date": "2026-04-20",
+    "user_id": "local",
+    "expected_specialty": "data_scientist"
   }
 ]
