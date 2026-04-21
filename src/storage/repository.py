@@ -992,7 +992,7 @@ def list_signals(
                     " WHERE user_id = :user_id"
                     " AND job_id = :job_id"
                     " AND recorded_at >= :cutoff"
-                    " ORDER BY recorded_at DESC"
+                    " ORDER BY recorded_at DESC, event_id DESC"
                 ),
                 params,
             ).fetchall()
@@ -1002,7 +1002,7 @@ def list_signals(
                     "SELECT * FROM signal_events"
                     " WHERE user_id = :user_id"
                     " AND job_id = :job_id"
-                    " ORDER BY recorded_at DESC"
+                    " ORDER BY recorded_at DESC, event_id DESC"
                 ),
                 params,
             ).fetchall()
@@ -1012,7 +1012,7 @@ def list_signals(
                     "SELECT * FROM signal_events"
                     " WHERE user_id = :user_id"
                     " AND recorded_at >= :cutoff"
-                    " ORDER BY recorded_at DESC"
+                    " ORDER BY recorded_at DESC, event_id DESC"
                 ),
                 params,
             ).fetchall()
@@ -1021,7 +1021,7 @@ def list_signals(
                 text(
                     "SELECT * FROM signal_events"
                     " WHERE user_id = :user_id"
-                    " ORDER BY recorded_at DESC"
+                    " ORDER BY recorded_at DESC, event_id DESC"
                 ),
                 params,
             ).fetchall()

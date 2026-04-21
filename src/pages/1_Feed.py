@@ -279,6 +279,9 @@ def _close_dwell(engine, job_id: str, specialty: str) -> None:
             specialty_name=specialty,
         )
         del st.session_state[open_key]
+        guard_key = f"dv_open_written_{job_id}"
+        if guard_key in st.session_state:
+            del st.session_state[guard_key]
 
 
 def _render_detail(job: JobPosting) -> None:
@@ -306,8 +309,11 @@ def _render_detail(job: JobPosting) -> None:
 
     # --- TASK-010: dwell-time tracking — record open timestamp ---
     open_key = f"open_time_{job_id}"
+    guard_key = f"dv_open_written_{job_id}"
     if open_key not in st.session_state:
         st.session_state[open_key] = time.time()
+    if guard_key not in st.session_state:
+        st.session_state[guard_key] = True
         SignalService.record(
             engine=engine,
             job_id=job_id,
