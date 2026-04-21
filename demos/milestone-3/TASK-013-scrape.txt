@@ -1,0 +1,50 @@
+------------------------------------------------------------
+TASK-013 DEMO — ScrapeRunner Pipeline Run
+Started at: 2026-04-21T23:53:32.931739+00:00
+------------------------------------------------------------
+WARNING src.sources.registry: JobSourceRegistry: source 'google' is not available — skipping
+2026-04-21 16:53:44,829 - INFO - JobSpy:Linkedin - finished scraping
+WARNING src.sources.registry: JobSourceRegistry: google → error: Source 'google' is not available (missing credentials or health check failed)
+
+Query:
+  search_term : data scientist
+  location    : Vancouver, BC, Canada
+  results_wanted (per source): 25
+  hours_old   : 72
+
+Pipeline stages (live):
+  [23:53:32] Scrape run #1 started
+  [23:53:32] Fetching postings from all sources…
+  [23:53:44]   google: ERROR — Source 'google' is not available (missing credentials or health check failed)
+  [23:53:44]   indeed: 0 raw postings
+  [23:53:44]   linkedin: 25 raw postings
+  [23:53:44] Fetched 25 total raw postings
+  [23:53:44] Normalizing postings…
+  [23:53:44] Normalized 25 postings
+  [23:53:44] Extracting salary and seniority signals…
+  [23:53:44] Running deduplication…
+  [23:53:44] Dedup complete: 22 canonical, 3 duplicates
+  [23:53:44] Applying hard filters…
+  [23:53:44] Filter: 20 kept, 2 excluded
+  [23:53:44] Storing 20 postings to database…
+  [23:53:44] Stored 20 jobs, wrote 20 classification stubs
+  [23:53:44] Run #1 complete — 20 new jobs stored in 11.9s
+
+------------------------------------------------------------
+PIPELINE REPORT
+------------------------------------------------------------
+  Run ID              : 1
+  Fetched (raw)       : 25
+  Normalized          : 25
+  After dedup         : 22  (3 duplicates removed)
+  After filter        : 20
+  Stored (DB writes)  : 20
+  Classification stubs: 20
+  Elapsed seconds     : 11.93
+
+  Rate limit warnings : none
+  Source errors:
+    google: Source 'google' is not available (missing credentials or health check failed)
+------------------------------------------------------------
+DONE
+------------------------------------------------------------
