@@ -210,10 +210,11 @@ class TestRawJobPosting:
 
 class TestFixtureRoundTrip:
     def test_all_15_fixtures_parse(self):
-        """Every entry in jobs_fixtures.json must parse as RawJobPosting without error."""
+        """Every entry in jobs_fixtures.json must parse as RawJobPosting without error.
+        TASK-009: fixture count is 17 (15 canonical + 2 duplicates)."""
         with open(JOBS_FIXTURE, encoding="utf-8") as f:
             raw_entries = json.load(f)
-        assert len(raw_entries) == 15, f"Expected 15, got {len(raw_entries)}"
+        assert len(raw_entries) == 17, f"Expected 17, got {len(raw_entries)}"
         for entry in raw_entries:
             raw = RawJobPosting(**entry)
             assert raw.id is not None

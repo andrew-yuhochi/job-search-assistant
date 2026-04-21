@@ -77,14 +77,15 @@ def _token_sort(s: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# AC-1: exactly 15 entries
+# AC-1: exactly 17 entries (TASK-009: expanded from 15 to 17)
+# 15 canonical postings + 2 intentional duplicate postings
 # ---------------------------------------------------------------------------
 
 class TestJobsFixtureCount:
     def test_exactly_15_entries(self):
         jobs = load_jobs()
-        assert len(jobs) == 15, (
-            f"Expected 15 entries in jobs_fixtures.json, got {len(jobs)}"
+        assert len(jobs) == 17, (
+            f"Expected 17 entries in jobs_fixtures.json (15 canonical + 2 duplicates), got {len(jobs)}"
         )
 
 

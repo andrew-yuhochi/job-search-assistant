@@ -35,14 +35,16 @@ PAGES_DIR = SRC_DIR / "pages"
 FIXTURES_PATH = PROJECT_ROOT / "tests" / "fixtures" / "jobs_fixtures.json"
 DEMO_ARTIFACT = PROJECT_ROOT / "demos" / "milestone-1" / "TASK-005-feed.txt"
 
-# Page files under test
+# Page files under test — only pages that exist at current milestone (M2).
+# Settings (4_Settings.py) and Signals (5_Signals.py) are scoped to M6 (TASK-019/TASK-021).
 PAGE_FILES = {
     "app": SRC_DIR / "app.py",
     "feed": PAGES_DIR / "1_Feed.py",
     "applied": PAGES_DIR / "2_Applied.py",
     "dismissed": PAGES_DIR / "3_Dismissed.py",
-    "settings": PAGES_DIR / "4_Settings.py",
-    "signals": PAGES_DIR / "5_Signals.py",
+    "knowledge_bank": PAGES_DIR / "4_Knowledge_Bank.py",
+    "settings": PAGES_DIR / "5_Settings.py",
+    "signals": PAGES_DIR / "6_Signals.py",
 }
 
 # ---------------------------------------------------------------------------
@@ -125,13 +127,15 @@ class TestPageFilesSyntax:
 
 
 # ---------------------------------------------------------------------------
-# Section 2: Fixture loading — must return exactly 15 items
+# Section 2: Fixture loading — must return exactly 17 items
+# (TASK-009: fixture set expanded to 17 entries: 15 canonical + 2 duplicates)
 # ---------------------------------------------------------------------------
 
 class TestFixtureLoading:
     """
-    AC (automated): _load_fixtures() returns exactly 15 job dicts.
-    Maps to TASK-005 AC: 'Job Feed shows 15 cards matching the fixture data'.
+    AC (automated): _load_fixtures() returns exactly 17 job dicts.
+    Fixture set has 17 entries: 15 canonical jobs + 2 duplicate postings.
+    TASK-009 extended the original 15-entry M1 set with jf-016 and jf-017.
     """
 
     def test_fixture_file_exists(self):
@@ -142,9 +146,9 @@ class TestFixtureLoading:
 
     def test_fixture_returns_exactly_15_items(self):
         jobs = _load_fixtures()
-        assert len(jobs) == 15, (
-            f"Expected exactly 15 fixture jobs, got {len(jobs)}. "
-            "TASK-005 AC requires 15 cards in the feed."
+        assert len(jobs) == 17, (
+            f"Expected exactly 17 fixture jobs (15 canonical + 2 duplicates), got {len(jobs)}. "
+            "TASK-009 expanded the fixture set to 17 entries."
         )
 
     def test_fixture_items_are_dicts(self):
@@ -265,8 +269,8 @@ class TestSpecialtyFilterLogic:
     def test_filter_all_returns_all_15_jobs(self):
         jobs = self._all_jobs()
         result = _filter_by_specialty(jobs, "All")
-        assert len(result) == 15, (
-            f"Filter 'All' should return all 15 jobs, got {len(result)}"
+        assert len(result) == 17, (
+            f"Filter 'All' should return all 17 fixture jobs, got {len(result)}"
         )
 
     def test_filter_data_scientist_returns_only_data_scientists(self):
@@ -326,29 +330,30 @@ class TestSpecialtyFilterLogic:
         """An empty/falsy selected_specialty should behave like 'All'."""
         jobs = self._all_jobs()
         result = _filter_by_specialty(jobs, "")
-        assert len(result) == 15, (
-            f"Empty specialty filter should return all 15 jobs, got {len(result)}"
+        assert len(result) == 17, (
+            f"Empty specialty filter should return all 17 fixture jobs, got {len(result)}"
         )
 
     def test_filter_none_returns_all_jobs(self):
         jobs = self._all_jobs()
         result = _filter_by_specialty(jobs, None)  # type: ignore[arg-type]
-        assert len(result) == 15, (
-            f"None specialty filter should return all 15 jobs, got {len(result)}"
+        assert len(result) == 17, (
+            f"None specialty filter should return all 17 fixture jobs, got {len(result)}"
         )
 
     def test_filter_counts_sum_to_15(self):
         """
         Filtering each non-All specialty and summing the counts should
         equal the total number of fixture jobs.
+        TASK-009: fixture now has 17 entries (15 canonical + 2 duplicates).
         """
         jobs = self._all_jobs()
         specialty_labels = [s for s in SPECIALTY_OPTIONS if s != "All"]
         total_filtered = sum(
             len(_filter_by_specialty(jobs, spec)) for spec in specialty_labels
         )
-        assert total_filtered == 15, (
-            f"Sum of per-specialty filter counts is {total_filtered}, expected 15. "
+        assert total_filtered == 17, (
+            f"Sum of per-specialty filter counts is {total_filtered}, expected 17. "
             "Every job must map to exactly one specialty label."
         )
 

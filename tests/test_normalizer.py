@@ -29,7 +29,8 @@ def raw_fixtures() -> list[RawJobPosting]:
 
 
 def test_all_fixtures_normalize_without_error(normalizer: Normalizer, raw_fixtures: list[RawJobPosting]) -> None:
-    assert len(raw_fixtures) == 15
+    # TASK-009: fixture set expanded to 17 (15 canonical + 2 duplicates)
+    assert len(raw_fixtures) == 17
     for raw in raw_fixtures:
         posting = normalizer.normalize(raw)
         assert posting is not None

@@ -1,0 +1,59 @@
+TASK-009 Demo Artifact — seed_from_fixtures.py + DB mode feed
+==============================================================
+Date: 2026-04-21
+
+--- Seed script log output ---
+
+2026-04-21 14:36:31 [INFO] src.storage.db — Specialty types seed complete (5 types configured)
+2026-04-21 14:36:31 [INFO] src.storage.db — Database ready at data/app.db
+2026-04-21 14:36:31 [INFO] seed_from_fixtures — Deleted 17 existing jobs for user_id='local'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures — Loading fixtures from tests/fixtures/jobs_fixtures.json
+2026-04-21 14:36:31 [INFO] seed_from_fixtures — Loaded 17 fixture entries
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [01] 'Senior Data Scientist' at 'Acme Corp'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   DUPLICATE detected: 'Data Scientist, Senior' at 'Acme Corp' → canonical f2ea831648bb (match_type=fuzzy_title_company, score=1.0)
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [02] 'ML Engineer' at 'Watershed AI'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [03] 'Senior ML Engineer — Recommendations' at 'Shopify'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [04] 'Data Engineer' at 'Hootsuite'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [05] 'Senior Data Engineer' at 'Fintech Startup — stealth'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [06] 'Data Analyst — Growth' at 'Trulioo'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [07] 'Senior Data Analyst' at 'TELUS Health'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [08] 'Applied Data Scientist — NLP' at 'Coveo'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   DUPLICATE detected: 'Principal Data Scientist' at 'Loblaws Digital' → canonical 9f8892f75061 (match_type=url_exact, score=None)
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [09] 'Data Scientist' at 'Klue'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [10] 'ML Engineer — Computer Vision' at 'D-Wave Systems'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [11] 'Data Scientist — Business Intelligence' at 'Absolute Software'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [12] 'Senior Data Analyst — Product Analytics' at 'Realtor.ca (CREA)'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [13] 'Data Engineer — ML Platform' at 'Bench Accounting'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [14] 'Senior Data Scientist — NLP' at 'Clio Technologies'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures —   Inserted canonical [15] 'Senior Data Scientist — Computer Vision' at 'Clio Technologies'
+2026-04-21 14:36:31 [INFO] seed_from_fixtures — Seeding complete: canonical_jobs=15, duplicates=2, classifications=15
+
+--- SQLite row counts ---
+
+total_jobs: 17          (15 canonical + 2 with duplicate_of set)
+canonical_jobs: 15
+duplicate_jobs: 2
+duplicate_records: 2    (in duplicates table)
+classifications: 15     (stub, one per canonical job)
+
+--- Duplicate detection results ---
+
+1. jf-002 'Data Scientist, Senior' at 'Acme Corp'
+   → fuzzy_title_company match of jf-001 'Senior Data Scientist' at 'Acme Corp'
+   → match_score=1.0 (token_sort_ratio = 100/100)
+
+2. jf-010 'Principal Data Scientist' at 'Loblaws Digital'
+   → url_exact match of jf-009 'Applied Data Scientist — NLP' at 'Coveo'
+   → Both postings share URL https://www.linkedin.com/jobs/view/3901234009
+   → match_score=None (exact match, no score needed)
+
+--- DB mode verification ---
+
+streamlit run src/app.py (no MODE env var) loads from SQLite.
+src/pages/1_Feed.py calls repository.list_jobs() → returns 15 canonical postings.
+src/app.py prototype mode branching removed — DB mode is now the only mode.
+
+--- Idempotency check ---
+
+Second run: "Deleted 17 existing jobs for user_id='local'" → 15+2+15 again.
+Identical counts on every run.

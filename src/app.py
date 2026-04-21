@@ -2,15 +2,13 @@
 # Initialises the database engine, sets page config, and provides
 # the sidebar navigation and "Run Scraper" button stub.
 # Per TDD §2.5 and TASK-005.
+# TASK-009: Prototype mode removed — DB mode is the only mode.
 
 from __future__ import annotations
 
-import os
-
 import streamlit as st
 
-# Prototype mode: load fixtures instead of DB when MODE=prototype
-PROTOTYPE_MODE = os.environ.get("MODE", "").lower() == "prototype"
+from src.storage.db import get_engine
 
 # Must be the very first Streamlit call in the entry-point file.
 st.set_page_config(
@@ -21,10 +19,7 @@ st.set_page_config(
 )
 
 # Initialise the database (idempotent — no-op if already bootstrapped).
-# Skipped in prototype mode to avoid DB dependency during Stage 1 prototype.
-if not PROTOTYPE_MODE:
-    from src.storage.db import get_engine
-    engine = get_engine()
+engine = get_engine()
 
 # ---------------------------------------------------------------------------
 # Session state initialisation
@@ -55,20 +50,12 @@ with st.sidebar:
 
     st.divider()
 
-    if PROTOTYPE_MODE:
-        st.caption("Prototype mode — scraper disabled")
-        st.button("Run Scraper", disabled=True, use_container_width=True)
-    else:
-        if st.button("Run Scraper", type="primary", use_container_width=True):
-            st.info("Scraper integration coming in Milestone 3.")
+    if st.button("Run Scraper", type="primary", use_container_width=True):
+        st.info("Scraper integration coming in Milestone 3.")
 
 # ---------------------------------------------------------------------------
-# Main page body — redirect hint
+# Main page body
 # ---------------------------------------------------------------------------
 
 st.header("Job Search Assistant")
-if PROTOTYPE_MODE:
-    st.info("Running in **prototype mode** — fixtures loaded from `tests/fixtures/jobs_fixtures.json`.")
-    st.markdown("Navigate to **Job Feed** in the sidebar to see the prototype dashboard.")
-else:
-    st.markdown("Navigate to **Job Feed** in the sidebar to browse jobs.")
+st.markdown("Navigate to **Job Feed** in the sidebar to browse jobs.")
