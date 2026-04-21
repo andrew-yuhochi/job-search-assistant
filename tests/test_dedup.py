@@ -439,3 +439,202 @@ class TestTokenizeAndJaccard:
         b = {"b", "c", "d"}
         # |A ∩ B| = 2, |A ∪ B| = 4 → 0.5
         assert _jaccard(a, b) == 0.5
+
+
+# ---------------------------------------------------------------------------
+# DB persistence tests — repository round-trips
+# ---------------------------------------------------------------------------
+
+from pathlib import Path as _Path
+
+import pytest
+from sqlalchemy import create_engine, text as _text
+
+from src.storage.repository import (
+    insert_job,
+    insert_duplicate,
+    update_job_duplicate_of,
+)
+
+_SCHEMA_PATH = _Path(__file__).parent.parent / "src" / "storage" / "schema.sql"
+
+
+@pytest.fixture(scope="module")
+def db_engine():
+    """
+    In-memory SQLite engine bootstrapped from the real schema.sql.
+    Scoped to the module so all DB tests share one engine (fast, hermetic).
+
+    Uses the raw DBAPI connection's executescript() to run the DDL because
+    schema.sql contains inline comments that include semicolons, which breaks
+    naive statement splitting.  executescript() handles multi-statement DDL
+    correctly and commits any pending transaction automatically.
+    """
+    engine = create_engine("sqlite:///:memory:", echo=False)
+    ddl = _SCHEMA_PATH.read_text()
+    raw_conn = engine.raw_connection()
+    try:
+        raw_conn.executescript(ddl)
+        # Seed the user row required by the jobs FK constraint.
+        raw_conn.execute(
+            "INSERT OR IGNORE INTO users (user_id, created_at) "
+            "VALUES ('local', '2026-01-01T00:00:00')"
+        )
+        raw_conn.commit()
+    finally:
+        raw_conn.close()
+    return engine
+
+
+class TestDbPersistenceUrlExact:
+    """DB round-trip: insert_job + insert_duplicate (url_exact) + update_job_duplicate_of."""
+
+    def test_duplicate_of_set_after_insert_duplicate_url_exact(self, db_engine):
+        """jobs.duplicate_of is populated on the duplicate row after insert_duplicate."""
+        canonical = _make_job(
+            job_id="db-can-url-001",
+            title="Data Scientist",
+            company="Acme Corp",
+            url="https://linkedin.com/jobs/view/url-exact-001",
+            description="Build ML models.",
+        )
+        duplicate = _make_job(
+            job_id="db-dup-url-001",
+            title="Data Scientist",
+            company="Acme Corp",
+            url="https://linkedin.com/jobs/view/url-exact-001",
+            description="Build ML models (reposted).",
+        )
+        insert_job(db_engine, canonical)
+        insert_job(db_engine, duplicate)
+        insert_duplicate(
+            db_engine,
+            duplicate_job_id=duplicate.job_id,
+            canonical_job_id=canonical.job_id,
+            match_type="url_exact",
+            match_score=None,
+        )
+
+        with db_engine.connect() as conn:
+            row = conn.execute(
+                _text("SELECT duplicate_of FROM jobs WHERE job_id = :jid"),
+                {"jid": duplicate.job_id},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == canonical.job_id
+
+    def test_duplicates_table_row_url_exact(self, db_engine):
+        """duplicates table has a row with correct fields for url_exact match."""
+        with db_engine.connect() as conn:
+            row = conn.execute(
+                _text(
+                    "SELECT duplicate_post_id, canonical_post_id, match_type, match_score "
+                    "FROM duplicates "
+                    "WHERE duplicate_post_id = :dup_id"
+                ),
+                {"dup_id": "db-dup-url-001"},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == "db-dup-url-001"
+        assert row[1] == "db-can-url-001"
+        assert row[2] == "url_exact"
+        assert row[3] is None  # url_exact carries no score
+
+
+class TestDbPersistenceFuzzyTitleCompany:
+    """DB round-trip: insert_job + insert_duplicate (fuzzy_title_company) + update_job_duplicate_of."""
+
+    def test_duplicate_of_set_after_insert_duplicate_fuzzy(self, db_engine):
+        """jobs.duplicate_of is populated on the duplicate row after fuzzy insert_duplicate."""
+        canonical = _make_job(
+            job_id="db-can-fuzzy-001",
+            title="Senior Data Scientist",
+            company="Beta Corp",
+            url="https://linkedin.com/jobs/view/fuzzy-can-001",
+            description="Lead ML modelling work.",
+        )
+        duplicate = _make_job(
+            job_id="db-dup-fuzzy-001",
+            title="Data Scientist, Senior",
+            company="Beta Corp",
+            url="https://indeed.com/viewjob?jk=fuzzy-dup-001",
+            description="Lead machine learning modelling.",
+        )
+        insert_job(db_engine, canonical)
+        insert_job(db_engine, duplicate)
+        insert_duplicate(
+            db_engine,
+            duplicate_job_id=duplicate.job_id,
+            canonical_job_id=canonical.job_id,
+            match_type="fuzzy_title_company",
+            match_score=0.93,
+        )
+
+        with db_engine.connect() as conn:
+            row = conn.execute(
+                _text("SELECT duplicate_of FROM jobs WHERE job_id = :jid"),
+                {"jid": duplicate.job_id},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == canonical.job_id
+
+    def test_duplicates_table_row_fuzzy_title_company(self, db_engine):
+        """duplicates table has a row with correct fields for fuzzy_title_company match."""
+        with db_engine.connect() as conn:
+            row = conn.execute(
+                _text(
+                    "SELECT duplicate_post_id, canonical_post_id, match_type, match_score "
+                    "FROM duplicates "
+                    "WHERE duplicate_post_id = :dup_id"
+                ),
+                {"dup_id": "db-dup-fuzzy-001"},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == "db-dup-fuzzy-001"
+        assert row[1] == "db-can-fuzzy-001"
+        assert row[2] == "fuzzy_title_company"
+        assert row[3] == pytest.approx(0.93)
+
+    def test_update_job_duplicate_of_standalone(self, db_engine):
+        """update_job_duplicate_of() sets duplicate_of independently of insert_duplicate."""
+        canonical = _make_job(
+            job_id="db-can-upd-001",
+            title="ML Engineer",
+            company="Gamma Inc",
+            url="https://linkedin.com/jobs/view/upd-can-001",
+            description="Deploy models to production.",
+        )
+        new_job = _make_job(
+            job_id="db-upd-job-001",
+            title="ML Engineer",
+            company="Gamma Inc",
+            url="https://indeed.com/viewjob?jk=upd-dup-001",
+            description="Ship production ML systems.",
+        )
+        insert_job(db_engine, canonical)
+        insert_job(db_engine, new_job)
+        update_job_duplicate_of(db_engine, new_job.job_id, canonical.job_id)
+
+        with db_engine.connect() as conn:
+            row = conn.execute(
+                _text("SELECT duplicate_of FROM jobs WHERE job_id = :jid"),
+                {"jid": new_job.job_id},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == canonical.job_id
+
+    def test_canonical_row_duplicate_of_remains_null(self, db_engine):
+        """The canonical job's duplicate_of must stay NULL after marking the duplicate."""
+        with db_engine.connect() as conn:
+            row = conn.execute(
+                _text("SELECT duplicate_of FROM jobs WHERE job_id = :jid"),
+                {"jid": "db-can-fuzzy-001"},
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] is None
