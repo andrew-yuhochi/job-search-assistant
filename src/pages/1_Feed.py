@@ -150,37 +150,51 @@ def _current_state(job: dict) -> str:
 
 
 def _render_card(job: dict) -> None:
-    """Render a single job card inside st.container(border=True)."""
+    """Render a single job card inside st.container(border=True).
+
+    Layout (Fix 1, 2, 3):
+      Row 1: [title button (3) | state badge (1)]
+      Row 2: specialty chip — left-aligned small tag
+      Row 3: description snippet — first 120 chars, muted
+      Row 4: salary badge | size badge | source label
+    """
     job_id = job["id"]
     specialty = _specialty_label(job)
     state = _current_state(job)
     is_duplicate = job_id in PROTOTYPE_DUPLICATE_MAP
 
     with st.container(border=True):
-        # BL-005: Full-width button as the click target — shows title @ company.
-        # This replaces the separate "View →" button and makes the whole card header clickable.
-        if st.button(
-            f"{job['title']} @ {job['company']}",
-            key=f"card_{job_id}",
-            use_container_width=True,
-        ):
-            st.session_state.selected_job_id = job_id
-            st.rerun()
+        # Row 1: title button (left, 3 parts) + state badge (right, 1 part)
+        col_title, col_badge = st.columns([3, 1])
+        with col_title:
+            # BL-005: clickable title as the full-width select button
+            if st.button(
+                f"**{job['title']} @ {job['company']}**",
+                key=f"card_{job_id}",
+                use_container_width=True,
+            ):
+                st.session_state.selected_job_id = job_id
+                st.rerun()
+        with col_badge:
+            # Fix 2: state badge right-aligned
+            st.markdown(
+                f"<div style='text-align:right'>{STATE_BADGE.get(state, STATE_BADGE['new'])}</div>",
+                unsafe_allow_html=True,
+            )
 
-        # Row 1: state badge + specialty chip
-        col_state, col_spec = st.columns([1, 2])
-        with col_state:
-            st.markdown(STATE_BADGE.get(state, STATE_BADGE["new"]), unsafe_allow_html=True)
-        with col_spec:
-            spec_bg, spec_fg = SPECIALTY_COLOR.get(specialty, ("#F5F5F5", "#424242"))
-            st.markdown(_badge_html(specialty, spec_bg, spec_fg), unsafe_allow_html=True)
+        # Row 2: specialty chip — Fix 3
+        st.markdown(
+            f"<span style='background:#2d2d2d;padding:2px 8px;border-radius:4px;"
+            f"font-size:0.8em;color:#ccc'>🏷 {specialty}</span>",
+            unsafe_allow_html=True,
+        )
 
-        # Row 2: duty summary (first 120 chars of description)
+        # Row 3: description snippet — first 120 chars
         summary = job.get("description", "")
         truncated = (summary[:120] + "...") if len(summary) > 120 else summary
         st.caption(truncated)
 
-        # Row 3: salary badge + company size badge + source  (BL-008: format_salary)
+        # Row 4: salary badge + company size badge + source  (BL-008: format_salary)
         salary_str = format_salary(job.get("salary_raw"))
         if salary_str == "Salary unknown":
             salary_html = _badge_html(salary_str, "#F5F5F5", "#757575")
@@ -200,7 +214,7 @@ def _render_card(job: dict) -> None:
             unsafe_allow_html=True,
         )
 
-        # Row 4: duplicate flag
+        # Duplicate flag
         if is_duplicate:
             canonical_id = PROTOTYPE_DUPLICATE_MAP[job_id]
             st.markdown(
@@ -245,13 +259,13 @@ def _render_detail(job: dict) -> None:
 
     st.divider()
 
-    # Full description
-    st.subheader("Job Description")
+    # Full description — Fix 5: taller scrollable text area (height 400)
+    st.markdown("**Job Description**")
     # BL-001: fixed height so the text area scrolls internally, not the page.
     st.text_area(
         label="Description",
         value=job.get("description", ""),
-        height=200,
+        height=400,
         disabled=True,
         label_visibility="collapsed",
     )
@@ -279,14 +293,18 @@ def _render_detail(job: dict) -> None:
         if st.button("Apply", key=f"apply_{job_id}", type="primary", use_container_width=True):
             if PROTOTYPE_MODE:
                 st.session_state.job_states[job_id] = "applied"
-                st.toast(f"Marked as Applied: {job['title']}")
+                # Fix 6: clear right panel and show contextual toast
+                st.session_state.selected_job_id = None
+                st.toast("✅ Saved to Applied. Head to the Applied tab to view your draft.")
                 st.rerun()
 
     with col_dismiss:
         if st.button("Dismiss", key=f"dismiss_{job_id}", use_container_width=True):
             if PROTOTYPE_MODE:
                 st.session_state.job_states[job_id] = "dismissed"
-                st.toast(f"Dismissed: {job['title']}")
+                # Fix 6: clear right panel and show contextual toast
+                st.session_state.selected_job_id = None
+                st.toast("🗑 Post dismissed. You can restore it from the Dismissed tab.")
                 st.rerun()
 
     with col_open:
@@ -398,6 +416,8 @@ with right_col:
         if match:
             _render_detail(match)
         else:
-            st.info("Selected job not found. It may have been filtered out.")
+            # Fix 6: job may have been applied/dismissed and removed from feed
+            st.info("👈 Select a post from the list to view details.")
     else:
-        st.info("← Select a job from the list to view details.")
+        # Fix 6: default empty state
+        st.info("👈 Select a post from the list to view details.")
