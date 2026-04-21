@@ -234,12 +234,10 @@ def _render_card(job: dict) -> None:
                 f"border-radius:4px;font-size:0.75rem'>&#9888; Duplicate of {canonical_id}</span>"
             )
 
-        # Row 5: Fix 1 — small right-aligned "View ›" button
-        _, col_view = st.columns([4, 1])
-        with col_view:
-            if st.button("View ›", key=f"select_{job_id}", type="secondary"):
-                st.session_state.selected_job_id = job_id
-                st.rerun()
+        # Row 5: full-width "View ›" button spanning the entire card bottom
+        if st.button("View ›", key=f"select_{job_id}", use_container_width=True):
+            st.session_state.selected_job_id = job_id
+            st.rerun()
 
 
 def _render_detail(job: dict) -> None:
