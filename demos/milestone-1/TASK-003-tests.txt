@@ -1,0 +1,78 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/andrew.yu/personal/projects/job-search-assistant/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/andrew.yu/personal/projects/job-search-assistant
+plugins: mock-3.15.1, anyio-4.13.0
+collecting ... collected 63 items
+
+tests/unit/test_models.py::TestEnumValues::test_job_state_values PASSED  [  1%]
+tests/unit/test_models.py::TestEnumValues::test_source_name_values PASSED [  3%]
+tests/unit/test_models.py::TestEnumValues::test_specialty_tier_values PASSED [  4%]
+tests/unit/test_models.py::TestEnumValues::test_seniority_level_values PASSED [  6%]
+tests/unit/test_models.py::TestEnumValues::test_confidence_level_values PASSED [  7%]
+tests/unit/test_models.py::TestEnumValues::test_location_preference_values PASSED [  9%]
+tests/unit/test_models.py::TestEnumValues::test_job_state_is_string_enum PASSED [ 11%]
+tests/unit/test_models.py::TestEnumValues::test_source_name_is_string_enum PASSED [ 12%]
+tests/unit/test_models.py::TestSalaryRange::test_valid_construction PASSED [ 14%]
+tests/unit/test_models.py::TestSalaryRange::test_equal_min_max_is_valid PASSED [ 15%]
+tests/unit/test_models.py::TestSalaryRange::test_max_less_than_min_raises PASSED [ 17%]
+tests/unit/test_models.py::TestSalaryRange::test_negative_min_raises PASSED [ 19%]
+tests/unit/test_models.py::TestSalaryRange::test_source_field_roundtrip PASSED [ 20%]
+tests/unit/test_models.py::TestRawJobPosting::test_valid_minimal PASSED  [ 22%]
+tests/unit/test_models.py::TestRawJobPosting::test_salary_raw_nullable PASSED [ 23%]
+tests/unit/test_models.py::TestRawJobPosting::test_salary_raw_string PASSED [ 25%]
+tests/unit/test_models.py::TestRawJobPosting::test_user_id_defaults_to_local PASSED [ 26%]
+tests/unit/test_models.py::TestRawJobPosting::test_invalid_source_raises PASSED [ 28%]
+tests/unit/test_models.py::TestRawJobPosting::test_google_is_valid_source PASSED [ 30%]
+tests/unit/test_models.py::TestRawJobPosting::test_empty_url_raises PASSED [ 31%]
+tests/unit/test_models.py::TestRawJobPosting::test_empty_description_raises PASSED [ 33%]
+tests/unit/test_models.py::TestRawJobPosting::test_expected_specialty_is_optional PASSED [ 34%]
+tests/unit/test_models.py::TestRawJobPosting::test_indeed_source PASSED  [ 36%]
+tests/unit/test_models.py::TestFixtureRoundTrip::test_all_15_fixtures_parse PASSED [ 38%]
+tests/unit/test_models.py::TestFixtureRoundTrip::test_fixture_sources_are_valid_enum_values PASSED [ 39%]
+tests/unit/test_models.py::TestFixtureRoundTrip::test_fixture_user_ids_all_local PASSED [ 41%]
+tests/unit/test_models.py::TestJobPosting::test_valid_construction PASSED [ 42%]
+tests/unit/test_models.py::TestJobPosting::test_default_state_is_new PASSED [ 44%]
+tests/unit/test_models.py::TestJobPosting::test_state_applied PASSED     [ 46%]
+tests/unit/test_models.py::TestJobPosting::test_invalid_state_raises PASSED [ 47%]
+tests/unit/test_models.py::TestJobPosting::test_duplicate_of_nullable PASSED [ 49%]
+tests/unit/test_models.py::TestJobPosting::test_duplicate_of_set PASSED  [ 50%]
+tests/unit/test_models.py::TestJobPosting::test_salary_fields_nullable PASSED [ 52%]
+tests/unit/test_models.py::TestJobPosting::test_salary_fields_set PASSED [ 53%]
+tests/unit/test_models.py::TestKnowledgeBankChunk::test_valid_construction PASSED [ 55%]
+tests/unit/test_models.py::TestKnowledgeBankChunk::test_char_end_equals_start_raises PASSED [ 57%]
+tests/unit/test_models.py::TestKnowledgeBankChunk::test_char_end_less_than_start_raises PASSED [ 58%]
+tests/unit/test_models.py::TestKnowledgeBankChunk::test_empty_content_raises PASSED [ 60%]
+tests/unit/test_models.py::TestKnowledgeBankChunk::test_order_index_defaults_to_zero PASSED [ 61%]
+tests/unit/test_models.py::TestKnowledgeBankChunk::test_negative_char_start_raises PASSED [ 63%]
+tests/unit/test_models.py::TestKnowledgeBank::test_valid_construction PASSED [ 65%]
+tests/unit/test_models.py::TestKnowledgeBank::test_user_id_defaults_to_local PASSED [ 66%]
+tests/unit/test_models.py::TestKnowledgeBank::test_with_chunks PASSED    [ 68%]
+tests/unit/test_models.py::TestHighlightDraft::test_valid_construction PASSED [ 69%]
+tests/unit/test_models.py::TestHighlightDraft::test_user_id_defaults_to_local PASSED [ 71%]
+tests/unit/test_models.py::TestHighlightDraft::test_empty_bullets_raises PASSED [ 73%]
+tests/unit/test_models.py::TestHighlightDraft::test_citations_default_empty PASSED [ 74%]
+tests/unit/test_models.py::TestSpecialtyType::test_valid_system_source PASSED [ 76%]
+tests/unit/test_models.py::TestSpecialtyType::test_valid_user_source PASSED [ 77%]
+tests/unit/test_models.py::TestSpecialtyType::test_invalid_source_raises PASSED [ 79%]
+tests/unit/test_models.py::TestSpecialtyType::test_empty_name_raises PASSED [ 80%]
+tests/unit/test_models.py::TestSpecialtyType::test_duty_signals_default_empty PASSED [ 82%]
+tests/unit/test_models.py::TestSpecialtyType::test_tier1_is_default PASSED [ 84%]
+tests/unit/test_models.py::TestSpecialtyType::test_user_id_defaults_to_local PASSED [ 85%]
+tests/unit/test_models.py::TestSignalEvent::test_valid_state_change PASSED [ 87%]
+tests/unit/test_models.py::TestSignalEvent::test_valid_detail_view_close PASSED [ 88%]
+tests/unit/test_models.py::TestSignalEvent::test_invalid_event_type_raises PASSED [ 90%]
+tests/unit/test_models.py::TestSignalEvent::test_negative_dwell_ms_raises PASSED [ 92%]
+tests/unit/test_models.py::TestSignalEvent::test_user_id_defaults_to_local PASSED [ 93%]
+tests/unit/test_models.py::TestSignalEvent::test_job_posting_id_optional PASSED [ 95%]
+tests/unit/test_models.py::TestSignalEvent::test_override_reason_set PASSED [ 96%]
+tests/unit/test_models.py::TestNormalizedJobPosting::test_valid_construction PASSED [ 98%]
+tests/unit/test_models.py::TestNormalizedJobPosting::test_user_id_defaults_to_local PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/unit/test_models.py: 37 warnings
+  /Users/andrew.yu/personal/projects/job-search-assistant/venv/lib/python3.14/site-packages/pydantic/main.py:263: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 63 passed, 37 warnings in 0.09s ========================
