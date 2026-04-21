@@ -1,0 +1,45 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.14.2, pytest-9.0.3, pluggy-1.6.0 -- /Users/andrew.yu/personal/projects/job-search-assistant/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/andrew.yu/personal/projects/job-search-assistant
+plugins: mock-3.15.1, anyio-4.13.0
+collecting ... collected 36 items
+
+tests/test_repository.py::TestInsertAndGetJob::test_insert_and_retrieve PASSED [  2%]
+tests/test_repository.py::TestInsertAndGetJob::test_get_missing_job_returns_none PASSED [  5%]
+tests/test_repository.py::TestInsertAndGetJob::test_insert_is_idempotent PASSED [  8%]
+tests/test_repository.py::TestListJobs::test_dismissed_excluded_by_default PASSED [ 11%]
+tests/test_repository.py::TestListJobs::test_state_filter_new_excludes_dismissed PASSED [ 13%]
+tests/test_repository.py::TestListJobs::test_state_filter_dismissed_returns_only_dismissed PASSED [ 16%]
+tests/test_repository.py::TestListJobs::test_ordering_salary_desc_nulls_last PASSED [ 19%]
+tests/test_repository.py::TestListJobs::test_limit_and_offset PASSED     [ 22%]
+tests/test_repository.py::TestUpdateJobState::test_state_transition_new_to_applied PASSED [ 25%]
+tests/test_repository.py::TestUpdateJobState::test_state_updated_at_refreshed PASSED [ 27%]
+tests/test_repository.py::TestDeleteAllJobs::test_deletes_jobs_for_user PASSED [ 30%]
+tests/test_repository.py::TestDeleteAllJobs::test_delete_on_empty_table_returns_zero PASSED [ 33%]
+tests/test_repository.py::TestDuplicates::test_insert_and_list_duplicate PASSED [ 36%]
+tests/test_repository.py::TestDuplicates::test_list_duplicates_empty_when_none PASSED [ 38%]
+tests/test_repository.py::TestClassifications::test_insert_and_get_classification PASSED [ 41%]
+tests/test_repository.py::TestClassifications::test_get_classification_missing_returns_none PASSED [ 44%]
+tests/test_repository.py::TestClassifications::test_upsert_overwrites_existing PASSED [ 47%]
+tests/test_repository.py::TestKnowledgeBank::test_insert_and_get_document PASSED [ 50%]
+tests/test_repository.py::TestKnowledgeBank::test_insert_deactivates_prior_documents PASSED [ 52%]
+tests/test_repository.py::TestKnowledgeBank::test_list_kb_documents PASSED [ 55%]
+tests/test_repository.py::TestKnowledgeBank::test_delete_kb_document PASSED [ 58%]
+tests/test_repository.py::TestKnowledgeBank::test_delete_missing_document_returns_false PASSED [ 61%]
+tests/test_repository.py::TestHighlightDrafts::test_insert_and_get_draft PASSED [ 63%]
+tests/test_repository.py::TestHighlightDrafts::test_get_draft_missing_returns_none PASSED [ 66%]
+tests/test_repository.py::TestHighlightDrafts::test_upsert_replaces_existing_draft PASSED [ 69%]
+tests/test_repository.py::TestSignals::test_insert_and_list_signal PASSED [ 72%]
+tests/test_repository.py::TestSignals::test_list_signals_returns_all_for_user PASSED [ 75%]
+tests/test_repository.py::TestSignals::test_list_signals_window_days_filter PASSED [ 77%]
+tests/test_repository.py::TestSettings::test_upsert_and_get_settings PASSED [ 80%]
+tests/test_repository.py::TestSettings::test_upsert_updates_existing_settings PASSED [ 83%]
+tests/test_repository.py::TestSettings::test_get_settings_missing_user_returns_none PASSED [ 86%]
+tests/test_repository.py::TestSpecialtyTypes::test_insert_and_list_enabled PASSED [ 88%]
+tests/test_repository.py::TestSpecialtyTypes::test_disabled_specialty_excluded_when_enabled_only PASSED [ 91%]
+tests/test_repository.py::TestSpecialtyTypes::test_list_all_includes_disabled PASSED [ 94%]
+tests/test_repository.py::TestSpecialtyTypes::test_update_specialty_type_enabled_toggle PASSED [ 97%]
+tests/test_repository.py::TestScrapeRuns::test_insert_and_finish_scrape_run PASSED [100%]
+
+============================== 36 passed in 0.23s ==============================
