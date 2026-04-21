@@ -1,0 +1,37 @@
+# Job Search Assistant — Python dependencies
+# Pin exact versions for reproducibility. Update with care.
+
+# Dashboard
+streamlit>=1.45
+
+# Database ORM
+sqlalchemy>=2.0
+
+# Data validation and domain models
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# Job scraping
+python-jobspy==1.1.82
+
+# Google Jobs via SerpAPI
+google-search-results
+
+# Anthropic LLM (Claude Haiku + Citations API)
+anthropic>=0.40
+
+# Fuzzy deduplication
+rapidfuzz
+
+# Knowledge bank .docx parsing
+python-docx
+
+# Config file parsing
+pyyaml
+
+# HTTP client for URL health checks
+requests
+
+# Testing
+pytest>=8.0
+pytest-mock

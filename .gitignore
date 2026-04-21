@@ -1,0 +1,42 @@
+# Environment — never commit secrets
+.env
+
+# SQLite database files
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# Streamlit cache
+.streamlit/
+
+# IDE
+.idea/
+.vscode/
+*.swp

@@ -1,0 +1,47 @@
+Directory tree for projects/job-search-assistant/ (generated 2026-04-20)
+Excludes: venv/, __pycache__/, *.egg-info
+
+.
+./.env.example
+./.gitignore
+./README.md
+./config
+./config/prompts
+./data
+./demos
+./demos/milestone-1
+./docs
+./docs/job-search-assistant
+./docs/job-search-assistant/poc
+./docs/job-search-assistant/poc/demos
+./docs/job-search-assistant/poc/demos/milestone-1
+./notebooks
+./requirements.txt
+./scripts
+./src
+./src/__init__.py
+./src/llm
+./src/llm/__init__.py
+./src/models
+./src/models/__init__.py
+./src/pages
+./src/pages/__init__.py
+./src/processing
+./src/processing/__init__.py
+./src/services
+./src/services/__init__.py
+./src/sources
+./src/sources/__init__.py
+./src/storage
+./src/storage/__init__.py
+./tests
+./tests/__init__.py
+./tests/conftest.py
+./tests/fixtures
+./venv  (excluded from tree)
+
+README.md "Built with Claude Code" line confirmed:
+> Built with [Claude Code](https://claude.ai/code)
+
+pip install -r requirements.txt: SUCCESS
+All packages installed into venv (Python 3.14, arm64 macOS).
