@@ -6,11 +6,14 @@
 # BL-001: scrollable description (height=200), BL-005: clickable card header,
 # BL-006: applied/dismissed hidden from feed, BL-007: sort order,
 # BL-008: standardised salary display.
+# TASK-010: SignalService wiring — auto-reviewed on detail open, Mark Applied /
+# Mark Dismissed write signal events, dwell time tracked in session_state.
 
 from __future__ import annotations
 
 import re
 import sys
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -21,6 +24,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.models.models import JobPosting
+from src.services.signal_service import SignalService
 from src.storage import repository
 from src.storage.db import get_engine
 
@@ -247,8 +251,34 @@ def _render_card(job: JobPosting) -> None:
 
         # Row 5: View button
         if st.button("View ›", key=f"select_{job_id}", use_container_width=True):
+            # Close dwell on the previously selected card (if any) before switching
+            prev_selected = st.session_state.get("selected_job_id")
+            if prev_selected and prev_selected != job_id:
+                prev_specialty = _specialty_label(prev_selected)
+                _close_dwell(_get_db_engine(), prev_selected, prev_specialty)
             st.session_state.selected_job_id = job_id
             st.rerun()
+
+
+def _close_dwell(engine, job_id: str, specialty: str) -> None:
+    """Write a detail_view_close signal with dwell_ms if the pane was previously open.
+
+    Called whenever a different card is opened (or a state button is pressed) so we
+    capture the time the previous card was visible before the rerun.
+    """
+    open_key = f"open_time_{job_id}"
+    open_ts = st.session_state.get(open_key)
+    if open_ts is not None:
+        dwell_ms = max(0, int((time.time() - open_ts) * 1000))
+        engine = _get_db_engine()
+        SignalService.record(
+            engine=engine,
+            job_id=job_id,
+            event_type="detail_view_close",
+            dwell_ms=dwell_ms,
+            specialty_name=specialty,
+        )
+        del st.session_state[open_key]
 
 
 def _render_detail(job: JobPosting) -> None:
@@ -257,6 +287,34 @@ def _render_detail(job: JobPosting) -> None:
     specialty = _specialty_label(job_id)
     state = _current_state(job)
     clf = _get_classification(job_id)
+
+    engine = _get_db_engine()
+
+    # --- TASK-010: auto-transition new → reviewed on detail open ---
+    if state == "new":
+        repository.update_job_state(engine, job_id, "reviewed")
+        st.session_state.job_states[job_id] = "reviewed"
+        state = "reviewed"
+        SignalService.record_state_change(
+            engine=engine,
+            job_id=job_id,
+            from_state="new",
+            to_state="reviewed",
+            specialty_name=specialty,
+            classification_confidence=(clf or {}).get("confidence"),
+        )
+
+    # --- TASK-010: dwell-time tracking — record open timestamp ---
+    open_key = f"open_time_{job_id}"
+    if open_key not in st.session_state:
+        st.session_state[open_key] = time.time()
+        SignalService.record(
+            engine=engine,
+            job_id=job_id,
+            event_type="detail_view_open",
+            specialty_name=specialty,
+            classification_confidence=(clf or {}).get("confidence"),
+        )
 
     spec_bg, spec_fg = SPECIALTY_COLORS.get(specialty, ("#424242", "#fff"))
 
@@ -316,20 +374,46 @@ def _render_detail(job: JobPosting) -> None:
 
     # Action buttons
     st.subheader("Actions")
-    engine = _get_db_engine()
     col_reviewed, col_apply, col_dismiss, col_open = st.columns(4)
 
     with col_reviewed:
         if st.button("Mark Reviewed", key=f"reviewed_{job_id}", use_container_width=True):
+            prev_state = _current_state(job)
             repository.update_job_state(engine, job_id, "reviewed")
             st.session_state.job_states[job_id] = "reviewed"
+            SignalService.record_state_change(
+                engine=engine,
+                job_id=job_id,
+                from_state=prev_state,
+                to_state="reviewed",
+                specialty_name=specialty,
+                classification_confidence=(clf or {}).get("confidence"),
+            )
             st.toast(f"Marked as Reviewed: {job.title}")
             st.rerun()
 
     with col_apply:
         if st.button("Apply", key=f"apply_{job_id}", type="primary", use_container_width=True):
+            prev_state = _current_state(job)
+            # Write dwell_close before navigating away
+            _close_dwell(engine, job_id, specialty)
             repository.update_job_state(engine, job_id, "applied")
             st.session_state.job_states[job_id] = "applied"
+            SignalService.record(
+                engine=engine,
+                job_id=job_id,
+                event_type="mark_applied",
+                specialty_name=specialty,
+                classification_confidence=(clf or {}).get("confidence"),
+            )
+            SignalService.record_state_change(
+                engine=engine,
+                job_id=job_id,
+                from_state=prev_state,
+                to_state="applied",
+                specialty_name=specialty,
+                classification_confidence=(clf or {}).get("confidence"),
+            )
             st.session_state.selected_job_id = None
             st.session_state.pending_toast = {
                 "msg": "Saved to Applied. Head to the Applied tab to view your draft.",
@@ -339,8 +423,26 @@ def _render_detail(job: JobPosting) -> None:
 
     with col_dismiss:
         if st.button("Dismiss", key=f"dismiss_{job_id}", use_container_width=True):
+            prev_state = _current_state(job)
+            # Write dwell_close before navigating away
+            _close_dwell(engine, job_id, specialty)
             repository.update_job_state(engine, job_id, "dismissed")
             st.session_state.job_states[job_id] = "dismissed"
+            SignalService.record(
+                engine=engine,
+                job_id=job_id,
+                event_type="mark_dismissed",
+                specialty_name=specialty,
+                classification_confidence=(clf or {}).get("confidence"),
+            )
+            SignalService.record_state_change(
+                engine=engine,
+                job_id=job_id,
+                from_state=prev_state,
+                to_state="dismissed",
+                specialty_name=specialty,
+                classification_confidence=(clf or {}).get("confidence"),
+            )
             st.session_state.selected_job_id = None
             st.session_state.pending_toast = {
                 "msg": "Post dismissed. You can restore it from the Dismissed tab.",

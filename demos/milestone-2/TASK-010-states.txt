@@ -1,0 +1,73 @@
+TASK-010: Post State Transitions + SignalService Wiring — Demo Artifact
+Generated: 2026-04-21
+Database: /tmp/task010_demo.db (ephemeral demo DB; seeded via inline Python script)
+
+=======================================================================
+Scenario A: demo-001 (Data Scientist) — new → reviewed → applied
+=======================================================================
+Steps exercised:
+  1. detail_view_open    → auto-triggers state_change new→reviewed
+  2. detail_view_close   → records dwell_ms=8500
+  3. mark_applied        → records mark_applied + state_change reviewed→applied
+
+=======================================================================
+Scenario B: demo-002 (ML Engineer) — new → reviewed → dismissed
+=======================================================================
+Steps exercised:
+  1. detail_view_open    → auto-triggers state_change new→reviewed
+  2. detail_view_close   → records dwell_ms=3100
+  3. mark_dismissed      → records mark_dismissed + state_change reviewed→dismissed
+
+=======================================================================
+Scenario C: demo-002 (ML Engineer) — dismissed → new (un-dismiss)
+=======================================================================
+Steps exercised:
+  1. un_dismiss button   → records state_change dismissed→new + un_dismiss
+
+=======================================================================
+sqlite3 query: SELECT * FROM signal_events ORDER BY event_id;
+=======================================================================
+
+event_id | job_id    | event_type        | from_state | to_state | specialty_name | confidence | dwell_ms | override_reason | recorded_at
+---------|-----------|-------------------|------------|----------|----------------|------------|----------|-----------------|-----------------------------
+1        | demo-001  | detail_view_open  |            |          | Data Scientist |            |          |                 | 2026-04-21T21:48:51.861584+00:00
+2        | demo-001  | state_change      | new        | reviewed | Data Scientist | high       |          |                 | 2026-04-21T21:48:51.861779+00:00
+3        | demo-001  | detail_view_close |            |          |                |            | 8500     |                 | 2026-04-21T21:48:51.861976+00:00
+4        | demo-001  | mark_applied      |            |          | Data Scientist |            |          |                 | 2026-04-21T21:48:51.862133+00:00
+5        | demo-001  | state_change      | reviewed   | applied  | Data Scientist | high       |          |                 | 2026-04-21T21:48:51.862223+00:00
+6        | demo-002  | detail_view_open  |            |          | ML Engineer    |            |          |                 | 2026-04-21T21:48:51.862312+00:00
+7        | demo-002  | state_change      | new        | reviewed | ML Engineer    | medium     |          |                 | 2026-04-21T21:48:51.862395+00:00
+8        | demo-002  | detail_view_close |            |          |                |            | 3100     |                 | 2026-04-21T21:48:51.862527+00:00
+9        | demo-002  | mark_dismissed    |            |          | ML Engineer    |            |          |                 | 2026-04-21T21:48:51.862656+00:00
+10       | demo-002  | state_change      | reviewed   | dismissed| ML Engineer    | medium     |          |                 | 2026-04-21T21:48:51.862738+00:00
+11       | demo-002  | state_change      | dismissed  | new      | ML Engineer    |            |          |                 | 2026-04-21T21:48:51.862869+00:00
+12       | demo-002  | un_dismiss        |            |          | ML Engineer    |            |          |                 | 2026-04-21T21:48:51.862952+00:00
+
+=======================================================================
+sqlite3 query: SELECT job_id, title, state FROM jobs ORDER BY job_id;
+=======================================================================
+
+job_id    | title           | state
+----------|-----------------|--------
+demo-001  | Data Scientist  | applied   ← stayed in DB with applied state
+demo-002  | ML Engineer     | new       ← un-dismissed, back in feed
+demo-003  | Data Analyst    | new       ← untouched
+
+=======================================================================
+pytest tests/test_signal.py -v — 8 tests, all passing
+=======================================================================
+
+tests/test_signal.py::test_record_writes_signal_event PASSED
+tests/test_signal.py::test_record_state_change_stores_states PASSED
+tests/test_signal.py::test_mark_dismissed_writes_two_events PASSED
+tests/test_signal.py::test_mark_applied_writes_events_and_job_stays PASSED
+tests/test_signal.py::test_un_dismiss_resets_state_and_writes_events PASSED
+tests/test_signal.py::test_detail_view_close_stores_dwell_ms PASSED
+tests/test_signal.py::test_override_reason_set_for_unclassified_dismiss PASSED
+tests/test_signal.py::test_list_signals_returns_all_events_for_job PASSED
+
+8 passed in 0.22s
+
+=======================================================================
+Full suite regression: pytest tests/ -q — 243 passed (was 235)
+=======================================================================
