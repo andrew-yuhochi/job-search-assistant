@@ -1,0 +1,16 @@
+WARNING:src.sources.registry:JobSourceRegistry: source 'google' is not available — skipping
+2026-04-21 16:17:35,683 - INFO - JobSpy:Linkedin - finished scraping
+WARNING:src.sources.registry:JobSourceRegistry: google → error: Source 'google' is not available (missing credentials or health check failed)
+Fetching from all sources: LinkedIn, Indeed, Google Jobs
+Query: 'data scientist' in 'Vancouver, BC, Canada'
+results_wanted per source: 15, hours_old: 168
+
+google          | status=error        | postings=0 | error: Source 'google' is not available (missing credentials or health check failed)
+indeed          | status=ok           | postings=0
+linkedin        | status=ok           | postings=15
+               | sample: 'Machine Learning Engineer' @ 'Alignerr'
+
+Total postings fetched: 15
+
+Registered sources: ['linkedin', 'indeed', 'google']
+No if-source-X branching — all dispatch through JobSourceRegistry.fetch_all()

@@ -3,11 +3,18 @@
 # the sidebar navigation and "Run Scraper" button stub.
 # Per TDD §2.5 and TASK-005.
 # TASK-009: Prototype mode removed — DB mode is the only mode.
+# TASK-011: JobSourceRegistry wired at startup.
 
 from __future__ import annotations
 
 import streamlit as st
 
+from src.sources import (
+    GoogleJobsSource,
+    IndeedSource,
+    JobSourceRegistry,
+    LinkedInSource,
+)
 from src.storage.db import get_engine
 
 # Must be the very first Streamlit call in the entry-point file.
@@ -20,6 +27,18 @@ st.set_page_config(
 
 # Initialise the database (idempotent — no-op if already bootstrapped).
 engine = get_engine()
+
+# ---------------------------------------------------------------------------
+# Source registry — populated once at startup, reused across requests.
+# TASK-011: registered via plugin pattern — no "if source == X" branching.
+# ---------------------------------------------------------------------------
+
+if "source_registry" not in st.session_state:
+    _registry = JobSourceRegistry()
+    _registry.register(LinkedInSource())
+    _registry.register(IndeedSource())
+    _registry.register(GoogleJobsSource())
+    st.session_state.source_registry = _registry
 
 # ---------------------------------------------------------------------------
 # Session state initialisation
