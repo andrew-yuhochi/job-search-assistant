@@ -314,40 +314,58 @@ def list_jobs(
     Returns:
         List of JobPosting objects.
     """
-    conditions = ["j.user_id = :user_id"]
     params: dict = {"user_id": user_id, "limit": limit, "offset": offset}
-
-    if state is not None:
-        conditions.append("j.state = :state")
-        params["state"] = state
-    else:
-        # Default: exclude dismissed unless caller explicitly requests state='dismissed'
-        conditions.append("j.state != 'dismissed'")
-
-    where_clause = " AND ".join(conditions)
 
     if specialty_filter:
         params["specialty_filter"] = specialty_filter
-        sql = f"""
-            SELECT j.* FROM jobs j
-            JOIN classifications c ON c.job_id = j.job_id
-            WHERE {where_clause}
-              AND c.specialty_name = :specialty_filter
-            ORDER BY j.posted_at DESC NULLS LAST,
-                     j.salary_min_cad DESC NULLS LAST
-            LIMIT :limit OFFSET :offset
-        """
+        if state is not None:
+            params["state"] = state
+            sql = text("""
+                SELECT j.* FROM jobs j
+                JOIN classifications c ON c.job_id = j.job_id
+                WHERE j.user_id = :user_id
+                  AND j.state = :state
+                  AND c.specialty_name = :specialty_filter
+                ORDER BY j.posted_at DESC NULLS LAST,
+                         j.salary_min_cad DESC NULLS LAST
+                LIMIT :limit OFFSET :offset
+            """)
+        else:
+            # Default: exclude dismissed unless caller explicitly requests state='dismissed'
+            sql = text("""
+                SELECT j.* FROM jobs j
+                JOIN classifications c ON c.job_id = j.job_id
+                WHERE j.user_id = :user_id
+                  AND j.state != 'dismissed'
+                  AND c.specialty_name = :specialty_filter
+                ORDER BY j.posted_at DESC NULLS LAST,
+                         j.salary_min_cad DESC NULLS LAST
+                LIMIT :limit OFFSET :offset
+            """)
     else:
-        sql = f"""
-            SELECT j.* FROM jobs j
-            WHERE {where_clause}
-            ORDER BY j.posted_at DESC NULLS LAST,
-                     j.salary_min_cad DESC NULLS LAST
-            LIMIT :limit OFFSET :offset
-        """
+        if state is not None:
+            params["state"] = state
+            sql = text("""
+                SELECT j.* FROM jobs j
+                WHERE j.user_id = :user_id
+                  AND j.state = :state
+                ORDER BY j.posted_at DESC NULLS LAST,
+                         j.salary_min_cad DESC NULLS LAST
+                LIMIT :limit OFFSET :offset
+            """)
+        else:
+            # Default: exclude dismissed unless caller explicitly requests state='dismissed'
+            sql = text("""
+                SELECT j.* FROM jobs j
+                WHERE j.user_id = :user_id
+                  AND j.state != 'dismissed'
+                ORDER BY j.posted_at DESC NULLS LAST,
+                         j.salary_min_cad DESC NULLS LAST
+                LIMIT :limit OFFSET :offset
+            """)
 
     with engine.connect() as conn:
-        rows = conn.execute(text(sql), params).fetchall()
+        rows = conn.execute(sql, params).fetchall()
 
     jobs = []
     for row in rows:
@@ -957,26 +975,56 @@ def list_signals(
     """
     from datetime import timedelta
 
-    conditions = ["user_id = :user_id"]
     params: dict = {"user_id": user_id}
 
     if job_id is not None:
-        conditions.append("job_id = :job_id")
         params["job_id"] = job_id
 
     if window_days is not None:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
-        conditions.append("recorded_at >= :cutoff")
         params["cutoff"] = cutoff
 
-    where = " AND ".join(conditions)
     with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                f"SELECT * FROM signal_events WHERE {where} ORDER BY recorded_at DESC"
-            ),
-            params,
-        ).fetchall()
+        if job_id is not None and window_days is not None:
+            rows = conn.execute(
+                text(
+                    "SELECT * FROM signal_events"
+                    " WHERE user_id = :user_id"
+                    " AND job_id = :job_id"
+                    " AND recorded_at >= :cutoff"
+                    " ORDER BY recorded_at DESC"
+                ),
+                params,
+            ).fetchall()
+        elif job_id is not None:
+            rows = conn.execute(
+                text(
+                    "SELECT * FROM signal_events"
+                    " WHERE user_id = :user_id"
+                    " AND job_id = :job_id"
+                    " ORDER BY recorded_at DESC"
+                ),
+                params,
+            ).fetchall()
+        elif window_days is not None:
+            rows = conn.execute(
+                text(
+                    "SELECT * FROM signal_events"
+                    " WHERE user_id = :user_id"
+                    " AND recorded_at >= :cutoff"
+                    " ORDER BY recorded_at DESC"
+                ),
+                params,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                text(
+                    "SELECT * FROM signal_events"
+                    " WHERE user_id = :user_id"
+                    " ORDER BY recorded_at DESC"
+                ),
+                params,
+            ).fetchall()
     return [dict(row._mapping) for row in rows]
 
 
@@ -1073,15 +1121,25 @@ def list_specialty_types(
         List of dicts ordered by tier ASC, name ASC.
     """
     params: dict = {"user_id": user_id}
-    extra = "AND enabled = 1" if enabled_only else ""
     with engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                f"SELECT * FROM specialty_types WHERE user_id = :user_id {extra} "
-                f"ORDER BY tier ASC, name ASC"
-            ),
-            params,
-        ).fetchall()
+        if enabled_only:
+            rows = conn.execute(
+                text(
+                    "SELECT * FROM specialty_types"
+                    " WHERE user_id = :user_id AND enabled = 1"
+                    " ORDER BY tier ASC, name ASC"
+                ),
+                params,
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                text(
+                    "SELECT * FROM specialty_types"
+                    " WHERE user_id = :user_id"
+                    " ORDER BY tier ASC, name ASC"
+                ),
+                params,
+            ).fetchall()
     return [dict(row._mapping) for row in rows]
 
 
