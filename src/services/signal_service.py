@@ -29,6 +29,7 @@ class SignalService:
         mark_applied       — user clicked [Mark Applied]
         mark_dismissed     — user clicked [Mark Dismissed]
         un_dismiss         — user clicked [Un-dismiss] on the Dismissed page
+        un_apply           — user clicked [Un-apply] on the Applied page
     """
 
     @staticmethod
