@@ -49,12 +49,23 @@ SPECIALTY_OPTIONS = ["All", "Data Scientist", "ML Engineer", "Data Engineer", "D
 # Specialty chip colours (inline HTML badges)
 # ---------------------------------------------------------------------------
 
+# Fix 3: per-specialty colors for card chips and detail badges.
+# Keys match expected_specialty values from fixtures.
+SPECIALTY_COLORS: dict[str, tuple[str, str]] = {
+    "data_scientist": ("#1565C0", "#fff"),
+    "ml_engineer":    ("#6A1B9A", "#fff"),
+    "data_engineer":  ("#E65100", "#fff"),
+    "data_analyst":   ("#00695C", "#fff"),
+    "unclassified":   ("#424242", "#fff"),
+}
+
+# Legacy label-keyed dict used by _render_detail (kept for backward compat).
 SPECIALTY_COLOR: dict[str, tuple[str, str]] = {
-    "Data Scientist":  ("#E3F2FD", "#1565C0"),
-    "ML Engineer":     ("#F3E5F5", "#6A1B9A"),
-    "Data Engineer":   ("#E8F5E9", "#2E7D32"),
-    "Data Analyst":    ("#FFF8E1", "#F57F17"),
-    "Unclassified":    ("#F5F5F5", "#616161"),
+    "Data Scientist":  ("#1565C0", "#fff"),
+    "ML Engineer":     ("#6A1B9A", "#fff"),
+    "Data Engineer":   ("#E65100", "#fff"),
+    "Data Analyst":    ("#00695C", "#fff"),
+    "Unclassified":    ("#424242", "#fff"),
 }
 
 # ---------------------------------------------------------------------------
@@ -87,13 +98,19 @@ def _badge_html(text: str, bg: str, fg: str) -> str:
 # ---------------------------------------------------------------------------
 
 def format_salary(salary_raw: str | None) -> str:
-    """Return a human-readable salary string.
+    """Return a human-readable salary string safe for HTML rendering.
+
+    Fix 7: use non-breaking hyphen (U+2011) for ranges so Streamlit's
+    markdown parser never treats the dash as italic markup, and prefix
+    both bounds with $ so the output is always "$NNNk\u2011$MMMk CAD".
 
     Examples:
-        "$120,000 - $150,000" -> "$120K–$150K CAD"
+        "$120,000 - $150,000" -> "$120K\u2011$150K CAD"
         "100K"                -> "$100K CAD"
         None / ""             -> "Salary unknown"
     """
+    _NBHYPHEN = "\u2011"  # non-breaking hyphen — not a markdown token
+
     if not salary_raw:
         return "Salary unknown"
 
@@ -115,7 +132,7 @@ def format_salary(salary_raw: str | None) -> str:
 
     if lo_k == hi_k:
         return f"${lo_k}K CAD"
-    return f"${lo_k}K–${hi_k}K CAD"
+    return f"${lo_k}K{_NBHYPHEN}${hi_k}K CAD"
 
 
 # ---------------------------------------------------------------------------
@@ -153,39 +170,35 @@ def _render_card(job: dict) -> None:
     """Render a single job card inside st.container(border=True).
 
     Layout (Fix 1, 2, 3):
-      Row 1: [title button (3) | state badge (1)]
-      Row 2: specialty chip — left-aligned small tag
+      Row 1: [title as plain bold text (4) | state badge (1)]
+      Row 2: specialty chip — left-aligned small tag, color per type
       Row 3: description snippet — first 120 chars, muted
       Row 4: salary badge | size badge | source label
+      Row 5: right-aligned "View ›" button
     """
     job_id = job["id"]
+    raw_specialty = (job.get("expected_specialty") or "unclassified").lower()
     specialty = _specialty_label(job)
     state = _current_state(job)
     is_duplicate = job_id in PROTOTYPE_DUPLICATE_MAP
 
     with st.container(border=True):
-        # Row 1: title button (left, 3 parts) + state badge (right, 1 part)
-        col_title, col_badge = st.columns([3, 1])
+        # Row 1: Fix 1 — plain bold title (non-interactive) + state badge
+        col_title, col_badge = st.columns([4, 1])
         with col_title:
-            # BL-005: clickable title as the full-width select button
-            if st.button(
-                f"**{job['title']} @ {job['company']}**",
-                key=f"card_{job_id}",
-                use_container_width=True,
-            ):
-                st.session_state.selected_job_id = job_id
-                st.rerun()
+            st.markdown(f"### {job['title']} @ {job['company']}")
         with col_badge:
-            # Fix 2: state badge right-aligned
             st.markdown(
-                f"<div style='text-align:right'>{STATE_BADGE.get(state, STATE_BADGE['new'])}</div>",
+                f"<div style='text-align:right;padding-top:6px'>"
+                f"{STATE_BADGE.get(state, STATE_BADGE['new'])}</div>",
                 unsafe_allow_html=True,
             )
 
-        # Row 2: specialty chip — Fix 3
+        # Row 2: specialty chip — Fix 3: color per expected_specialty value
+        chip_bg, chip_fg = SPECIALTY_COLORS.get(raw_specialty, ("#424242", "#fff"))
         st.markdown(
-            f"<span style='background:#2d2d2d;padding:2px 8px;border-radius:4px;"
-            f"font-size:0.8em;color:#ccc'>🏷 {specialty}</span>",
+            f"<span style='background:{chip_bg};padding:2px 8px;border-radius:4px;"
+            f"font-size:0.8em;color:{chip_fg}'>🏷 {specialty}</span>",
             unsafe_allow_html=True,
         )
 
@@ -199,6 +212,8 @@ def _render_card(job: dict) -> None:
         if salary_str == "Salary unknown":
             salary_html = _badge_html(salary_str, "#F5F5F5", "#757575")
         else:
+            # Fix 7: render salary inside a <span> with unsafe_allow_html to
+            # bypass markdown italic parsing of the K–$K pattern.
             salary_html = _badge_html(salary_str, "#E8F5E9", "#2E7D32")
 
         # company_employees_label not in fixtures — always "Size unknown"
@@ -222,6 +237,13 @@ def _render_card(job: dict) -> None:
                 f'border-radius:4px;font-size:0.75rem">&#9888; Duplicate of {canonical_id}</span>',
                 unsafe_allow_html=True,
             )
+
+        # Row 5: Fix 1 — small right-aligned "View ›" button
+        _, col_view = st.columns([4, 1])
+        with col_view:
+            if st.button("View ›", key=f"select_{job_id}", type="secondary"):
+                st.session_state.selected_job_id = job_id
+                st.rerun()
 
 
 def _render_detail(job: dict) -> None:
@@ -259,16 +281,10 @@ def _render_detail(job: dict) -> None:
 
     st.divider()
 
-    # Full description — Fix 5: taller scrollable text area (height 400)
-    st.markdown("**Job Description**")
-    # BL-001: fixed height so the text area scrolls internally, not the page.
-    st.text_area(
-        label="Description",
-        value=job.get("description", ""),
-        height=400,
-        disabled=True,
-        label_visibility="collapsed",
-    )
+    # Full description — Fix 5: collapsible expander with markdown rendering.
+    # Replaces the fixed-height text_area so the user can collapse when done reading.
+    with st.expander("📄 Job Description", expanded=True):
+        st.markdown(job.get("description", ""))
 
     st.divider()
 
@@ -292,19 +308,19 @@ def _render_detail(job: dict) -> None:
     with col_apply:
         if st.button("Apply", key=f"apply_{job_id}", type="primary", use_container_width=True):
             if PROTOTYPE_MODE:
+                # Fix 6: state → clear selection → toast → rerun (toast must precede rerun)
                 st.session_state.job_states[job_id] = "applied"
-                # Fix 6: clear right panel and show contextual toast
                 st.session_state.selected_job_id = None
-                st.toast("✅ Saved to Applied. Head to the Applied tab to view your draft.")
+                st.toast("✅ Saved to Applied. Head to the Applied tab to view your draft.", icon="✅")
                 st.rerun()
 
     with col_dismiss:
         if st.button("Dismiss", key=f"dismiss_{job_id}", use_container_width=True):
             if PROTOTYPE_MODE:
+                # Fix 6: state → clear selection → toast → rerun (toast must precede rerun)
                 st.session_state.job_states[job_id] = "dismissed"
-                # Fix 6: clear right panel and show contextual toast
                 st.session_state.selected_job_id = None
-                st.toast("🗑 Post dismissed. You can restore it from the Dismissed tab.")
+                st.toast("🗑 Post dismissed. You can restore it from the Dismissed tab.", icon="🗑")
                 st.rerun()
 
     with col_open:
