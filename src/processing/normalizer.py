@@ -121,6 +121,38 @@ def _infer_seniority(title: str) -> SeniorityLevel:
     return SeniorityLevel.unknown
 
 
+_SALARY_TOKEN = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([Kk]?)")
+
+
+def _parse_salary_raw(salary_raw: str | None) -> tuple[int | None, int | None]:
+    """Extract (min_cad, max_cad) integers from a raw salary string.
+
+    Returns (None, None) when the string is absent or no numbers are found.
+    Examples:
+        "$130,000 – $155,000 CAD" → (130000, 155000)
+        "130K to 155K CAD"        → (130000, 155000)
+        None                       → (None, None)
+    """
+    if not salary_raw:
+        return None, None
+
+    cleaned = salary_raw.replace(",", "")
+    numbers: list[float] = []
+    for m in _SALARY_TOKEN.finditer(cleaned):
+        val = float(m.group(1))
+        if m.group(2).upper() == "K":
+            val *= 1_000
+        if val >= 1_000:  # ignore noise like "2 years" → 2
+            numbers.append(val)
+
+    if not numbers:
+        return None, None
+
+    lo = round(min(numbers))
+    hi = round(max(numbers))
+    return lo, hi
+
+
 def _make_job_id(source: str, url: str) -> str:
     return hashlib.sha256(f"{source}:{url}".encode()).hexdigest()
 
@@ -152,6 +184,9 @@ class Normalizer:
             elif any(city in loc_lower for city in ("vancouver", "burnaby", "richmond", "surrey")):
                 is_remote = False
 
+        salary_min, salary_max = _parse_salary_raw(raw.salary_raw)
+        salary_source = "regex" if salary_min is not None else None
+
         return JobPosting(
             job_id=_make_job_id(raw.source.value, raw.url),
             user_id=raw.user_id,
@@ -168,6 +203,9 @@ class Normalizer:
             posted_at=posted_at,
             description=raw.description,
             seniority=seniority,
+            salary_min_cad=salary_min,
+            salary_max_cad=salary_max,
+            salary_source=salary_source,
         )
 
     def check_url(self, url: str) -> bool:

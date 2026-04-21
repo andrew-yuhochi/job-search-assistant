@@ -1,10 +1,61 @@
-# Applied tab — shows posts the user has marked as applied.
-# Full implementation deferred to TASK-020 (Milestone 6).
-# Currently shows an empty state message.
+# Applied page — lists jobs the user has marked as applied.
+# Shows full card layout (title, company, salary badge, specialty chip, location,
+# duty summary, posted date) via the shared render_full_card helper from _card.py.
+# Applied is a terminal feed state — no action buttons needed.
+# Fix 3: replaces the empty-state stub from the Milestone 2 validation round.
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
 
 import streamlit as st
 
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from src.pages._card import render_full_card
+from src.storage import repository
+from src.storage.db import get_engine
+
+
+@st.cache_resource
+def _get_db_engine():
+    return get_engine()
+
+
+def _get_specialty(job_id: str) -> str:
+    engine = _get_db_engine()
+    clf = repository.get_classification(engine, job_id)
+    if clf:
+        return clf.get("specialty_name", "Unclassified")
+    return "Unclassified"
+
+
+# ---------------------------------------------------------------------------
+# Page layout
+# ---------------------------------------------------------------------------
+
 st.title("Applied")
-st.caption("Posts you have marked as applied will appear here.")
+st.caption("Posts you have marked as applied.")
+
+engine = _get_db_engine()
+applied_jobs = repository.list_jobs(engine, user_id="local", state="applied")
+
+if not applied_jobs:
+    st.divider()
+    st.info("No applied posts yet.")
+    st.stop()
+
 st.divider()
-st.caption("You haven't marked any posts as applied yet.")
+
+for job in applied_jobs:
+    specialty = _get_specialty(job.job_id)
+    render_full_card(
+        job=job,
+        specialty=specialty,
+        state="applied",
+        canonical_label=None,
+        extra_buttons=None,
+    )

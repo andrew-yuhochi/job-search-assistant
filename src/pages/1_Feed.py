@@ -24,6 +24,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.models.models import JobPosting
+from src.pages._card import render_full_card
 from src.services.signal_service import SignalService
 from src.storage import repository
 from src.storage.db import get_engine
@@ -165,99 +166,51 @@ def _current_state(job: JobPosting) -> str:
     return st.session_state.job_states.get(job.job_id, job.state.value)
 
 
-def _render_card(job: JobPosting) -> None:
-    """Render a single job card inside st.container(border=True).
+def _canonical_label(job: JobPosting) -> str | None:
+    """Return 'Title at Company' for the canonical post, or None if not a duplicate."""
+    if job.duplicate_of is None:
+        return None
+    engine = _get_db_engine()
+    canonical = repository.get_job(engine, job_id=job.duplicate_of)
+    if canonical:
+        return f"{canonical.title} at {canonical.company_normalized}"
+    # Fallback: show truncated hash if canonical not found
+    return str(job.duplicate_of)[:12]
 
-    Layout:
-      Row 1: [title as plain bold text (4) | state badge (1)]
-      Row 2: specialty chip — left-aligned small tag, colour per type
-      Row 3: description snippet — first 120 chars, muted
-      Row 4: salary badge | size badge | source label
-      Row 5: right-aligned "View ›" button
+
+def _render_card(job: JobPosting) -> None:
+    """Render a single job card using the shared card helper.
+
+    Layout (via render_full_card):
+      Row 1: [title (4) | state badge (1)]
+      Row 2: location + posted date
+      Row 3: specialty chip
+      Row 4: description snippet (120 chars)
+      Row 5: salary badge | size badge | source label
+      Optional: duplicate warning with canonical job title + company
+      Row 6: View › button
     """
     job_id = job.job_id
     specialty = _specialty_label(job_id)
     state = _current_state(job)
-    is_duplicate = job.duplicate_of is not None
+    canonical_label = _canonical_label(job)
 
-    chip_bg, chip_fg = SPECIALTY_COLORS.get(specialty, ("#424242", "#fff"))
-
-    with st.container(border=True):
-        # Row 1: title + state badge
-        col_title, col_badge = st.columns([4, 1])
-        with col_title:
-            st.markdown(
-                f"<span style='font-size:1.2em;font-weight:700'>{job.title}</span>",
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f"<span style='color:#aaa;font-size:1.05em'>{job.company}</span>",
-                unsafe_allow_html=True,
-            )
-        with col_badge:
-            st.markdown(
-                f"<div style='text-align:right;padding-top:6px'>"
-                f"{STATE_BADGE.get(state, STATE_BADGE['new'])}</div>",
-                unsafe_allow_html=True,
-            )
-
-        # Row 2: specialty chip
-        st.markdown(
-            f"<span style='background:{chip_bg};padding:2px 8px;border-radius:4px;"
-            f"font-size:0.8em;color:{chip_fg}'>🏷 {specialty}</span>",
-            unsafe_allow_html=True,
-        )
-
-        # Row 3: description snippet
-        summary = job.description or ""
-        truncated = (summary[:120] + "...") if len(summary) > 120 else summary
-        st.caption(truncated)
-
-        # Row 4: salary + size + source badges
-        salary_str = format_salary(job.salary_min_cad, job.salary_max_cad)
-        if salary_str == "Salary unknown":
-            salary_badge = (
-                "<span style='background:#2d2d2d;color:#aaa;padding:3px 8px;"
-                "border-radius:4px;font-size:0.85em;font-style:normal'>Salary unknown</span>"
-            )
-        else:
-            salary_badge = (
-                f"<span style='background:#1a3a1a;color:#4caf50;padding:3px 8px;"
-                f"border-radius:4px;font-size:0.85em;font-style:normal'>{salary_str}</span>"
-            )
-
-        size_label = job.company_employees_label
-        if size_label:
-            size_badge = (
-                f"<span style='background:#2d2d2d;color:#ccc;padding:3px 8px;"
-                f"border-radius:4px;font-size:0.85em;font-style:normal'>{size_label}</span>"
-            )
-        else:
-            size_badge = (
-                "<span style='background:#2d2d2d;color:#ccc;padding:3px 8px;"
-                "border-radius:4px;font-size:0.85em;font-style:normal'>Size unknown</span>"
-            )
-
-        source_text = SOURCE_LABEL.get(job.source.value, "")
-        st.html(f"{salary_badge} &nbsp; {size_badge} &nbsp; <small style='color:#888'>{source_text}</small>")
-
-        # Duplicate flag
-        if is_duplicate:
-            st.html(
-                f"<span style='background:#FFF3CD;color:#856404;padding:2px 8px;"
-                f"border-radius:4px;font-size:0.75rem'>&#9888; Duplicate of "
-                f"{str(job.duplicate_of)[:12]}</span>"
-            )
-
-        # Row 5: View button
+    def _view_button():
         if st.button("View ›", key=f"select_{job_id}", use_container_width=True):
-            # Close dwell on the previously selected card (if any) before switching
             prev_selected = st.session_state.get("selected_job_id")
             if prev_selected and prev_selected != job_id:
                 prev_specialty = _specialty_label(prev_selected)
                 _close_dwell(_get_db_engine(), prev_selected, prev_specialty)
             st.session_state.selected_job_id = job_id
             st.rerun()
+
+    render_full_card(
+        job=job,
+        specialty=specialty,
+        state=state,
+        canonical_label=canonical_label,
+        extra_buttons=[_view_button],
+    )
 
 
 def _close_dwell(engine, job_id: str, specialty: str) -> None:
@@ -359,8 +312,13 @@ def _render_detail(job: JobPosting) -> None:
 
     # Duplicate notice
     if job.duplicate_of:
+        canonical = repository.get_job(engine, job_id=job.duplicate_of)
+        if canonical:
+            dup_label = f"**{canonical.title} at {canonical.company_normalized}**"
+        else:
+            dup_label = f"**{str(job.duplicate_of)[:12]}**"
         st.info(
-            f"This post appears to duplicate canonical job **{str(job.duplicate_of)[:12]}**. "
+            f"This post appears to duplicate canonical job {dup_label}. "
             "It may be the same role posted on a different job board."
         )
 
