@@ -1,0 +1,16 @@
+# Default hard-filter configuration for the Job Search Assistant.
+# Loaded on first run by src/storage/db.py to seed the user_settings row.
+# Per TDD §7 and PRD §6.
+
+location:
+  allowed: ["Vancouver, BC", "Remote"]
+  remote_keywords: ["remote", "work from home", "wfh", "distributed"]
+
+seniority:
+  excluded_keywords: ["principal", "staff", "director", "vp", "head of", "lead"]
+
+salary:
+  floor_cad: 120000
+
+company_size:
+  min_employees: 50  # proxy: exclude micro-startups

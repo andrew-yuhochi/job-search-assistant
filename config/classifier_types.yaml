@@ -1,0 +1,26 @@
+# Specialty type configuration for the Job Search Assistant classifier.
+# Mirrors the seed rows inserted into specialty_types on first run.
+# Tier 1 = hardcoded seed (enabled by default).
+# Tier 2 = configurable slot (disabled by default at PoC; user enables in Settings).
+# Per TDD §7 and TASK-004.
+
+specialty_types:
+  - name: data_scientist
+    tier: tier1
+    enabled: true
+
+  - name: ml_engineer
+    tier: tier1
+    enabled: true
+
+  - name: data_engineer
+    tier: tier1
+    enabled: true
+
+  - name: data_analyst
+    tier: tier1
+    enabled: true
+
+  - name: analytics_engineer
+    tier: tier2
+    enabled: false

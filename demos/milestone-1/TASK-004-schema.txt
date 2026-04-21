@@ -1,0 +1,136 @@
+--- TASK-004 Verification Output ---
+
+Tables: ['classifications', 'duplicates', 'highlight_drafts', 'jobs', 'knowledge_bank_chunks', 'knowledge_bank_documents', 'scrape_runs', 'signal_events', 'specialty_types', 'sqlite_sequence', 'user_settings', 'users']
+journal_mode: wal
+foreign_keys: 1
+specialty_types: [('data_scientist', 1, 1, 'seed'), ('ml_engineer', 1, 1, 'seed'), ('data_engineer', 1, 1, 'seed'), ('data_analyst', 1, 1, 'seed'), ('analytics_engineer', 2, 0, 'config')]
+
+--- sqlite3 data/app.db ".schema" ---
+
+CREATE TABLE users (
+    user_id TEXT PRIMARY KEY,
+    created_at TIMESTAMP NOT NULL
+);
+CREATE TABLE user_settings (
+    user_id TEXT PRIMARY KEY REFERENCES users(user_id),
+    location_preference TEXT NOT NULL,          -- 'vancouver' | 'remote_friendly' | 'both'
+    salary_floor_cad INTEGER,                   -- nullable; null = no floor
+    excluded_seniority_levels TEXT NOT NULL,    -- JSON array: ["principal","staff",...]
+    updated_at TIMESTAMP NOT NULL
+);
+CREATE TABLE specialty_types (
+    specialty_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    name TEXT NOT NULL,                         -- 'Data Scientist', 'ML Engineer', etc.
+    description TEXT,                           -- for prompt context
+    duty_signals TEXT,                          -- JSON array of example duty phrases
+    tier INTEGER NOT NULL,                      -- 1 = hardcoded seed, 2 = configurable, 3 = user-proposed
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    source TEXT NOT NULL,                       -- 'seed' | 'config' | 'proposed'
+    created_at TIMESTAMP NOT NULL,
+    UNIQUE (user_id, name)
+);
+CREATE TABLE sqlite_sequence(name,seq);
+CREATE TABLE jobs (
+    job_id TEXT PRIMARY KEY,                    -- derived: sha256(source + url)
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    source TEXT NOT NULL,                       -- 'linkedin' | 'indeed' | 'google'
+    source_job_id TEXT,                         -- ID extracted from URL if present
+    url TEXT NOT NULL,
+    url_hostname TEXT NOT NULL,
+    title TEXT NOT NULL,
+    title_normalized TEXT NOT NULL,
+    company TEXT NOT NULL,
+    company_normalized TEXT NOT NULL,
+    location TEXT,
+    is_remote BOOLEAN,
+    posted_at TIMESTAMP,                        -- nullable (not all sources expose this reliably)
+    description TEXT NOT NULL,
+    salary_min_cad INTEGER,                     -- nullable
+    salary_max_cad INTEGER,                     -- nullable
+    salary_source TEXT,                         -- 'regex' | 'llm' | 'source_field' | null
+    seniority TEXT,                             -- enum; 'unknown' allowed
+    company_employees_label TEXT,               -- from Indeed; null for LinkedIn
+    company_size_bucket TEXT,                   -- 'micro' | 'small' | 'medium' | 'large' | 'unknown'
+    duplicate_of TEXT REFERENCES jobs(job_id), -- null = canonical
+    fetched_at TIMESTAMP NOT NULL,
+    url_health_checked_at TIMESTAMP,
+    url_is_dead BOOLEAN,
+    state TEXT NOT NULL DEFAULT 'new',          -- 'new' | 'reviewed' | 'applied' | 'dismissed'
+    state_updated_at TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_jobs_user_state_posted ON jobs(user_id, state, posted_at DESC);
+CREATE INDEX idx_jobs_company_title_norm ON jobs(company_normalized, title_normalized);
+CREATE TABLE classifications (
+    classification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    specialty_name TEXT NOT NULL,               -- matches specialty_types.name OR 'Unclassified'
+    confidence TEXT NOT NULL,                   -- 'high' | 'medium' | 'low'
+    duty_signals TEXT NOT NULL,                 -- JSON array of verbatim quoted phrases
+    model_name TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    classified_at TIMESTAMP NOT NULL,
+    UNIQUE (job_id)                             -- one classification per job at PoC
+);
+CREATE TABLE duplicates (
+    duplicate_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    duplicate_post_id TEXT NOT NULL REFERENCES jobs(job_id),
+    canonical_post_id TEXT NOT NULL REFERENCES jobs(job_id),
+    match_type TEXT NOT NULL,                   -- 'exact_url' | 'fuzzy_title_company'
+    match_score REAL,                           -- null for exact matches
+    detected_at TIMESTAMP NOT NULL
+);
+CREATE TABLE knowledge_bank_documents (
+    kb_doc_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    filename TEXT NOT NULL,
+    full_text TEXT NOT NULL,
+    word_count INTEGER NOT NULL,
+    uploaded_at TIMESTAMP NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT 1        -- only the most recent upload is active
+);
+CREATE TABLE knowledge_bank_chunks (
+    chunk_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kb_doc_id INTEGER NOT NULL REFERENCES knowledge_bank_documents(kb_doc_id),
+    section_title TEXT NOT NULL,
+    chunk_text TEXT NOT NULL,
+    start_char_index INTEGER NOT NULL,
+    end_char_index INTEGER NOT NULL,
+    order_index INTEGER NOT NULL
+);
+CREATE TABLE highlight_drafts (
+    draft_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL REFERENCES jobs(job_id),
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    bullets_json TEXT NOT NULL,                 -- JSON array of {text, cited_chunk_id, cited_text}
+    model_name TEXT NOT NULL,
+    prompt_version TEXT NOT NULL,
+    generated_at TIMESTAMP NOT NULL,
+    persisted_reason TEXT NOT NULL              -- 'applied' | 'manual_save' (PoC only writes 'applied')
+);
+CREATE TABLE signal_events (
+    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    job_id TEXT REFERENCES jobs(job_id),
+    event_type TEXT NOT NULL,                   -- 'state_change' | 'detail_view_open' | 'detail_view_close' | 'override_inferred'
+    from_state TEXT,
+    to_state TEXT,
+    specialty_name TEXT,
+    classification_confidence TEXT,
+    dwell_ms INTEGER,                           -- for detail_view_close
+    override_reason TEXT,                       -- 'quick_dismiss_lt_15s' | 'acted_on_unclassified' | null
+    recorded_at TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_signal_user_time ON signal_events(user_id, recorded_at DESC);
+CREATE TABLE scrape_runs (
+    run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL REFERENCES users(user_id),
+    started_at TIMESTAMP NOT NULL,
+    finished_at TIMESTAMP,
+    source_results_json TEXT NOT NULL,          -- {linkedin: {status, count}, indeed: {...}, ...}
+    total_fetched INTEGER,
+    total_after_filters INTEGER,
+    total_duplicates INTEGER,
+    error_log TEXT
+);
