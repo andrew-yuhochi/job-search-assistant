@@ -186,8 +186,8 @@ def _render_card(job: dict) -> None:
         # Row 1: Fix 1 — plain bold title (non-interactive) + state badge
         col_title, col_badge = st.columns([4, 1])
         with col_title:
-            st.markdown(f"**{job['title']}**")
-            st.markdown(f"<span style='color:#aaa;font-size:0.9em'>{job['company']}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='font-size:1.2em;font-weight:700'>{job['title']}</span>", unsafe_allow_html=True)
+            st.markdown(f"<span style='color:#aaa;font-size:1.05em'>{job['company']}</span>", unsafe_allow_html=True)
         with col_badge:
             st.markdown(
                 f"<div style='text-align:right;padding-top:6px'>"
