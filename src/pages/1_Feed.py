@@ -186,7 +186,8 @@ def _render_card(job: dict) -> None:
         # Row 1: Fix 1 — plain bold title (non-interactive) + state badge
         col_title, col_badge = st.columns([4, 1])
         with col_title:
-            st.markdown(f"### {job['title']} @ {job['company']}")
+            st.markdown(f"**{job['title']}**")
+            st.markdown(f"<span style='color:#aaa;font-size:0.9em'>{job['company']}</span>", unsafe_allow_html=True)
         with col_badge:
             st.markdown(
                 f"<div style='text-align:right;padding-top:6px'>"
@@ -208,34 +209,29 @@ def _render_card(job: dict) -> None:
         st.caption(truncated)
 
         # Row 4: salary badge + company size badge + source  (BL-008: format_salary)
+        # Fix 3: use st.html() for all badge content to bypass markdown processing entirely.
         salary_str = format_salary(job.get("salary_raw"))
         if salary_str == "Salary unknown":
-            salary_html = _badge_html(salary_str, "#F5F5F5", "#757575")
+            salary_badge = f"<span style='background:#2d2d2d;color:#aaa;padding:3px 8px;border-radius:4px;font-size:0.85em;font-style:normal'>Salary unknown</span>"
         else:
-            # Fix 7: render salary inside a <span> with unsafe_allow_html to
-            # bypass markdown italic parsing of the K–$K pattern.
-            salary_html = _badge_html(salary_str, "#E8F5E9", "#2E7D32")
+            salary_badge = f"<span style='background:#1a3a1a;color:#4caf50;padding:3px 8px;border-radius:4px;font-size:0.85em;font-style:normal'>{salary_str}</span>"
 
         # company_employees_label not in fixtures — always "Size unknown"
         size_label = job.get("company_employees_label")
         if size_label:
-            size_html = _badge_html(size_label, "#F5F5F5", "#424242")
+            size_badge = f"<span style='background:#2d2d2d;color:#ccc;padding:3px 8px;border-radius:4px;font-size:0.85em;font-style:normal'>{size_label}</span>"
         else:
-            size_html = _badge_html("Size unknown", "#FFF9C4", "#F57F17")
+            size_badge = f"<span style='background:#2d2d2d;color:#ccc;padding:3px 8px;border-radius:4px;font-size:0.85em;font-style:normal'>Size unknown</span>"
 
         source_text = SOURCE_LABEL.get(job.get("source", ""), "")
-        st.markdown(
-            f"{salary_html} &nbsp; {size_html} &nbsp; <small>{source_text}</small>",
-            unsafe_allow_html=True,
-        )
+        st.html(f"{salary_badge} &nbsp; {size_badge} &nbsp; <small style='color:#888'>{source_text}</small>")
 
-        # Duplicate flag
+        # Duplicate flag — Fix 3: st.html() to prevent markdown processing
         if is_duplicate:
             canonical_id = PROTOTYPE_DUPLICATE_MAP[job_id]
-            st.markdown(
-                f'<span style="background:#FFF3CD;color:#856404;padding:2px 8px;'
-                f'border-radius:4px;font-size:0.75rem">&#9888; Duplicate of {canonical_id}</span>',
-                unsafe_allow_html=True,
+            st.html(
+                f"<span style='background:#FFF3CD;color:#856404;padding:2px 8px;"
+                f"border-radius:4px;font-size:0.75rem'>&#9888; Duplicate of {canonical_id}</span>"
             )
 
         # Row 5: Fix 1 — small right-aligned "View ›" button
@@ -253,26 +249,28 @@ def _render_detail(job: dict) -> None:
     state = _current_state(job)
     is_duplicate = job_id in PROTOTYPE_DUPLICATE_MAP
 
-    # Header
+    # Header — Fix 1: title on one line, company muted below
     st.subheader(job["title"])
-    st.markdown(f"**{job['company']}** &nbsp;·&nbsp; {job.get('location', 'N/A')}")
+    st.markdown(
+        f"<span style='color:#aaa;font-size:0.9em'>{job['company']}</span>"
+        f" &nbsp;·&nbsp; {job.get('location', 'N/A')}",
+        unsafe_allow_html=True,
+    )
     source_text = SOURCE_LABEL.get(job.get("source", ""), job.get("source", ""))
     st.caption(f"Source: {source_text} &nbsp;·&nbsp; Posted: {job.get('posted_date', 'N/A')}")
 
     st.divider()
 
     # Specialty + salary badges  (BL-008: format_salary)
+    # Fix 3: use st.html() for salary to bypass markdown processing entirely.
     spec_bg, spec_fg = SPECIALTY_COLOR.get(specialty, ("#F5F5F5", "#424242"))
     salary_str = format_salary(job.get("salary_raw"))
-    salary_html = (
-        _badge_html(salary_str, "#E8F5E9", "#2E7D32")
-        if salary_str != "Salary unknown"
-        else _badge_html(salary_str, "#F5F5F5", "#757575")
-    )
-    st.markdown(
-        f"{_badge_html(specialty, spec_bg, spec_fg)} &nbsp; {salary_html}",
-        unsafe_allow_html=True,
-    )
+    if salary_str == "Salary unknown":
+        salary_badge = f"<span style='background:#2d2d2d;color:#aaa;padding:3px 8px;border-radius:4px;font-size:0.85em;font-style:normal'>Salary unknown</span>"
+    else:
+        salary_badge = f"<span style='background:#1a3a1a;color:#4caf50;padding:3px 8px;border-radius:4px;font-size:0.85em;font-style:normal'>{salary_str}</span>"
+    spec_badge = _badge_html(specialty, spec_bg, spec_fg)
+    st.html(f"{spec_badge} &nbsp; {salary_badge}")
 
     # Duplicate notice
     if is_duplicate:
@@ -311,7 +309,7 @@ def _render_detail(job: dict) -> None:
                 # Fix 6: state → clear selection → toast → rerun (toast must precede rerun)
                 st.session_state.job_states[job_id] = "applied"
                 st.session_state.selected_job_id = None
-                st.toast("✅ Saved to Applied. Head to the Applied tab to view your draft.", icon="✅")
+                st.session_state.pending_toast = {"msg": "✅ Saved to Applied. Head to the Applied tab to view your draft.", "icon": "✅"}
                 st.rerun()
 
     with col_dismiss:
@@ -320,7 +318,7 @@ def _render_detail(job: dict) -> None:
                 # Fix 6: state → clear selection → toast → rerun (toast must precede rerun)
                 st.session_state.job_states[job_id] = "dismissed"
                 st.session_state.selected_job_id = None
-                st.toast("🗑 Post dismissed. You can restore it from the Dismissed tab.", icon="🗑")
+                st.session_state.pending_toast = {"msg": "🗑 Post dismissed. You can restore it from the Dismissed tab.", "icon": "🗑"}
                 st.rerun()
 
     with col_open:
@@ -341,6 +339,11 @@ jobs = _get_jobs()
 if not PROTOTYPE_MODE and not jobs:
     st.info("No jobs yet — run the scraper first.")
     st.stop()
+
+# Fix 2: render any pending toast that was queued before the last rerun.
+if st.session_state.pending_toast:
+    st.toast(st.session_state.pending_toast["msg"], icon=st.session_state.pending_toast["icon"])
+    st.session_state.pending_toast = None
 
 # Specialty filter chips
 try:

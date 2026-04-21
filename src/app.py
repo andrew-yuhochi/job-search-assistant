@@ -36,6 +36,9 @@ if "selected_job_id" not in st.session_state:
 if "job_states" not in st.session_state:
     st.session_state.job_states = {}  # job_id -> state string
 
+if "pending_toast" not in st.session_state:
+    st.session_state.pending_toast = None  # {"msg": str, "icon": str} or None
+
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
@@ -43,12 +46,12 @@ if "job_states" not in st.session_state:
 with st.sidebar:
     st.title("Job Search Assistant")
 
-    st.page_link("src/pages/1_Feed.py", label="Job Feed", icon="📋")
-    st.page_link("src/pages/2_Applied.py", label="Applied", icon="✅")
-    st.page_link("src/pages/3_Dismissed.py", label="Dismissed", icon="🚫")
-    st.page_link("src/pages/4_Knowledge_Bank.py", label="Knowledge Bank", icon="📚")
-    st.page_link("src/pages/5_Settings.py", label="Settings", icon="⚙️")
-    st.page_link("src/pages/6_Signals.py", label="Signals", icon="📊")
+    st.page_link("pages/1_Feed.py", label="Job Feed", icon="📋")
+    st.page_link("pages/2_Applied.py", label="Applied", icon="✅")
+    st.page_link("pages/3_Dismissed.py", label="Dismissed", icon="🚫")
+    st.page_link("pages/4_Knowledge_Bank.py", label="Knowledge Bank", icon="📚")
+    st.page_link("pages/5_Settings.py", label="Settings", icon="⚙️")
+    st.page_link("pages/6_Signals.py", label="Signals", icon="📊")
 
     st.divider()
 
