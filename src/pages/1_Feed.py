@@ -2,11 +2,15 @@
 # In prototype mode (MODE=prototype), loads from tests/fixtures/jobs_fixtures.json.
 # In normal mode, shows a placeholder until the scraper pipeline is wired (Milestone 2+).
 # Per UX-SPEC.md §UI Component Guide and TASK-005.
+# BL-001: scrollable description (height=200), BL-005: clickable card header,
+# BL-006: applied/dismissed hidden from feed, BL-007: sort order,
+# BL-008: standardised salary display.
 
 from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import streamlit as st
@@ -79,6 +83,42 @@ def _badge_html(text: str, bg: str, fg: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# BL-008: Salary formatting
+# ---------------------------------------------------------------------------
+
+def format_salary(salary_raw: str | None) -> str:
+    """Return a human-readable salary string.
+
+    Examples:
+        "$120,000 - $150,000" -> "$120K–$150K CAD"
+        "100K"                -> "$100K CAD"
+        None / ""             -> "Salary unknown"
+    """
+    if not salary_raw:
+        return "Salary unknown"
+
+    # Match each number optionally followed by K/k, e.g. "120,000", "100K", "150k"
+    raw = salary_raw.replace(",", "")
+    token_re = re.compile(r"(\d+(?:\.\d+)?)\s*([Kk]?)")
+    numbers: list[float] = []
+    for m in token_re.finditer(raw):
+        val = float(m.group(1))
+        if m.group(2):        # K/k suffix — value is already in thousands
+            val *= 1_000
+        numbers.append(val)
+
+    if not numbers:
+        return salary_raw  # couldn't parse — return raw as-is
+
+    lo_k = round(min(numbers) / 1_000)
+    hi_k = round(max(numbers) / 1_000)
+
+    if lo_k == hi_k:
+        return f"${lo_k}K CAD"
+    return f"${lo_k}K–${hi_k}K CAD"
+
+
+# ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
@@ -117,31 +157,35 @@ def _render_card(job: dict) -> None:
     is_duplicate = job_id in PROTOTYPE_DUPLICATE_MAP
 
     with st.container(border=True):
-        # Row 1: company (bold) + state badge
-        col_company, col_state = st.columns([3, 1])
-        with col_company:
-            st.markdown(f"**{job['company']}**")
+        # BL-005: Full-width button as the click target — shows title @ company.
+        # This replaces the separate "View →" button and makes the whole card header clickable.
+        if st.button(
+            f"{job['title']} @ {job['company']}",
+            key=f"card_{job_id}",
+            use_container_width=True,
+        ):
+            st.session_state.selected_job_id = job_id
+            st.rerun()
+
+        # Row 1: state badge + specialty chip
+        col_state, col_spec = st.columns([1, 2])
         with col_state:
             st.markdown(STATE_BADGE.get(state, STATE_BADGE["new"]), unsafe_allow_html=True)
+        with col_spec:
+            spec_bg, spec_fg = SPECIALTY_COLOR.get(specialty, ("#F5F5F5", "#424242"))
+            st.markdown(_badge_html(specialty, spec_bg, spec_fg), unsafe_allow_html=True)
 
-        # Row 2: title + specialty chip
-        spec_bg, spec_fg = SPECIALTY_COLOR.get(specialty, ("#F5F5F5", "#424242"))
-        st.markdown(
-            f"{job['title']} &nbsp; {_badge_html(specialty, spec_bg, spec_fg)}",
-            unsafe_allow_html=True,
-        )
-
-        # Row 3: duty summary (first 120 chars of description)
+        # Row 2: duty summary (first 120 chars of description)
         summary = job.get("description", "")
         truncated = (summary[:120] + "...") if len(summary) > 120 else summary
         st.caption(truncated)
 
-        # Row 4: salary badge + company size badge + source
-        salary_raw = job.get("salary_raw")
-        if salary_raw:
-            salary_html = _badge_html(salary_raw, "#E8F5E9", "#2E7D32")
+        # Row 3: salary badge + company size badge + source  (BL-008: format_salary)
+        salary_str = format_salary(job.get("salary_raw"))
+        if salary_str == "Salary unknown":
+            salary_html = _badge_html(salary_str, "#F5F5F5", "#757575")
         else:
-            salary_html = _badge_html("Salary unknown", "#F5F5F5", "#757575")
+            salary_html = _badge_html(salary_str, "#E8F5E9", "#2E7D32")
 
         # company_employees_label not in fixtures — always "Size unknown"
         size_label = job.get("company_employees_label")
@@ -156,7 +200,7 @@ def _render_card(job: dict) -> None:
             unsafe_allow_html=True,
         )
 
-        # Row 5: duplicate flag
+        # Row 4: duplicate flag
         if is_duplicate:
             canonical_id = PROTOTYPE_DUPLICATE_MAP[job_id]
             st.markdown(
@@ -164,11 +208,6 @@ def _render_card(job: dict) -> None:
                 f'border-radius:4px;font-size:0.75rem">&#9888; Duplicate of {canonical_id}</span>',
                 unsafe_allow_html=True,
             )
-
-        # Click target
-        if st.button("View →", key=f"card_{job_id}", use_container_width=True):
-            st.session_state.selected_job_id = job_id
-            st.rerun()
 
 
 def _render_detail(job: dict) -> None:
@@ -186,13 +225,13 @@ def _render_detail(job: dict) -> None:
 
     st.divider()
 
-    # Specialty + salary badges
+    # Specialty + salary badges  (BL-008: format_salary)
     spec_bg, spec_fg = SPECIALTY_COLOR.get(specialty, ("#F5F5F5", "#424242"))
-    salary_raw = job.get("salary_raw")
+    salary_str = format_salary(job.get("salary_raw"))
     salary_html = (
-        _badge_html(salary_raw, "#E8F5E9", "#2E7D32")
-        if salary_raw
-        else _badge_html("Salary unknown", "#F5F5F5", "#757575")
+        _badge_html(salary_str, "#E8F5E9", "#2E7D32")
+        if salary_str != "Salary unknown"
+        else _badge_html(salary_str, "#F5F5F5", "#757575")
     )
     st.markdown(
         f"{_badge_html(specialty, spec_bg, spec_fg)} &nbsp; {salary_html}",
@@ -208,10 +247,11 @@ def _render_detail(job: dict) -> None:
 
     # Full description
     st.subheader("Job Description")
+    # BL-001: fixed height so the text area scrolls internally, not the page.
     st.text_area(
         label="Description",
         value=job.get("description", ""),
-        height=250,
+        height=200,
         disabled=True,
         label_visibility="collapsed",
     )
@@ -285,11 +325,60 @@ except AttributeError:
         label_visibility="collapsed",
     )
 
-# Filter jobs by selected specialty
+# BL-006: count applied / dismissed for sidebar badge and exclude from feed.
+job_states = st.session_state.job_states
+applied_count = sum(1 for j in jobs if job_states.get(j["id"]) == "applied")
+dismissed_count = sum(1 for j in jobs if job_states.get(j["id"]) == "dismissed")
+
+with st.sidebar:
+    if applied_count:
+        st.caption(f"Applied ({applied_count})")
+    if dismissed_count:
+        st.caption(f"Dismissed ({dismissed_count})")
+
+# Filter jobs by selected specialty, then exclude applied/dismissed.
 if selected_specialty and selected_specialty != "All":
-    filtered_jobs = [j for j in jobs if _specialty_label(j) == selected_specialty]
+    specialty_jobs = [j for j in jobs if _specialty_label(j) == selected_specialty]
 else:
-    filtered_jobs = jobs
+    specialty_jobs = jobs
+
+filtered_jobs = [
+    j for j in specialty_jobs
+    if job_states.get(j["id"]) not in ("applied", "dismissed")
+]
+
+# BL-007: Sort — New first (0), Reviewed (1), Applied (2), Dismissed (3),
+# then posted_date descending, then salary descending (null salary = 0).
+_STATUS_PRIORITY: dict[str, int] = {"new": 0, "reviewed": 1, "applied": 2, "dismissed": 3}
+
+
+def _salary_int(salary_raw: str | None) -> int:
+    """Extract the minimum salary as an integer for sort purposes (null → 0)."""
+    if not salary_raw:
+        return 0
+    nums = re.findall(r"\d+", salary_raw.replace(",", ""))
+    if not nums:
+        return 0
+    val = int(nums[0])
+    if "k" in salary_raw.lower():
+        val *= 1_000
+    return val
+
+
+def _posted_int(posted_date: str | None) -> int:
+    """Convert ISO date string to integer (YYYYMMDD) for numeric negation in sort."""
+    if not posted_date:
+        return 0
+    return int(posted_date.replace("-", ""))
+
+
+filtered_jobs.sort(
+    key=lambda j: (
+        _STATUS_PRIORITY.get(job_states.get(j["id"], "new"), 0),
+        -_posted_int(j.get("posted_date")),
+        -_salary_int(j.get("salary_raw")),
+    )
+)
 
 # Two-pane layout: [2, 3] per UX-SPEC §1
 left_col, right_col = st.columns([2, 3])
