@@ -146,12 +146,10 @@ with st.sidebar:
 
     st.divider()
 
-    # Status strip — shown when a run is in progress or just finished
-    status_placeholder = st.empty()
-    if st.session_state.scrape_status:
-        status_placeholder.info(st.session_state.scrape_status)
-
-    # [Run Scraper] button — disabled during an active run
+    # [Run Scraper] button — disabled during an active run.
+    # The button is rendered first; the status strip lives below it so that
+    # updating the status placeholder (via st.empty) during the synchronous
+    # scrape run does NOT push a second button into the layout.
     if st.button(
         "Run Scraper",
         type="primary",
@@ -161,6 +159,10 @@ with st.sidebar:
         st.session_state.scrape_running = True
         st.session_state.scrape_status = "Starting scrape run…"
         st.session_state.last_scrape_result = None
+
+        # Status strip placeholder — defined AFTER the button so it never
+        # appears above the button and cannot be mistaken for a second button.
+        status_placeholder = st.empty()
         status_placeholder.info(st.session_state.scrape_status)
 
         def _on_status(msg: str) -> None:
@@ -192,6 +194,11 @@ with st.sidebar:
             status_placeholder.error(err_msg)
         finally:
             st.session_state.scrape_running = False
+
+    # Status strip — shown on reruns when a scrape just finished (outside the
+    # button block so it renders during normal page loads, not just on click).
+    if st.session_state.scrape_status and not st.session_state.scrape_running:
+        st.info(st.session_state.scrape_status)
 
     # Rate-limit warning banners — one per rate-limited source from the last run
     result = st.session_state.last_scrape_result

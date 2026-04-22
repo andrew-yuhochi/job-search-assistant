@@ -150,12 +150,25 @@ def _row_to_raw(row, source: SourceName) -> RawJobPosting:
     # we retain the posting for dedup and filtering rather than dropping it.
     description = _safe_str(row.get("description")) or "(description not available)"
 
-    # Build a salary_raw string from jobspy's structured fields if present
-    min_amount = row.get("min_amount")
-    max_amount = row.get("max_amount")
-    currency = _safe_str(row.get("currency")) or ""
-    if min_amount is not None and not (isinstance(min_amount, float) and math.isnan(min_amount)):
-        salary_raw = f"{min_amount}–{max_amount} {currency}".strip("–").strip()
+    # Structured salary fields from jobspy — pass through for SalaryExtractor.
+    def _safe_float(val) -> Optional[float]:
+        if val is None:
+            return None
+        try:
+            f = float(val)
+            return None if math.isnan(f) else f
+        except (ValueError, TypeError):
+            return None
+
+    min_amount = _safe_float(row.get("min_amount"))
+    max_amount = _safe_float(row.get("max_amount"))
+    currency_str = _safe_str(row.get("currency"))
+    interval_str = _safe_str(row.get("interval"))
+
+    # Also build a salary_raw string as before (kept for legacy regex path).
+    if min_amount is not None:
+        currency_label = currency_str or ""
+        salary_raw = f"{min_amount}–{max_amount} {currency_label}".strip("–").strip()
     else:
         salary_raw = None
 
@@ -171,4 +184,8 @@ def _row_to_raw(row, source: SourceName) -> RawJobPosting:
         description=description,
         salary_raw=salary_raw,
         posted_date=posted_date,
+        salary_min_raw=min_amount,
+        salary_max_raw=max_amount,
+        salary_currency=currency_str,
+        salary_interval=interval_str,
     )

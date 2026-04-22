@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -140,6 +141,51 @@ class GoogleJobsSource(JobSource):
 
 
 # ---------------------------------------------------------------------------
+# Description formatting helpers
+# ---------------------------------------------------------------------------
+
+# Sentence-boundary words that often start bullet-like items in job descriptions.
+# We insert a paragraph break before them when they follow ". " at the start of
+# what looks like a new sentence.
+_BULLET_STARTERS = re.compile(
+    r"\.\s+(?="
+    r"(?:You |We |Our |The |This |Must |Will |Should |Can |Are |Have |"
+    r"Responsibilities|Requirements|Qualifications|Benefits|About|"
+    r"Experience|Skills|Education|What|How|Why|Work|Join|Build|Lead|"
+    r"Design|Develop|Manage|Analyze|Create|Ensure|Support|Collaborate|"
+    r"Drive|Own|Define|Partner|Report|Provide|Help|Make|Use|Apply|"
+    r"[A-Z][a-z])"
+    r")",
+    re.MULTILINE,
+)
+
+# Collapse excessive whitespace and carriage returns.
+_EXCESS_WHITESPACE = re.compile(r"\r|\t|[ ]{2,}")
+
+
+def _format_description(text: str) -> str:
+    """
+    Lightweight formatting pass for SerpAPI Google Jobs descriptions.
+
+    These come back as dense unformatted paragraphs.  We add paragraph breaks
+    at sentence boundaries before common bullet-starter words, and strip noise
+    whitespace.  No LLM or NLP — pure regex.
+    """
+    if not text:
+        return text
+    # 1. Normalise carriage returns and excessive spaces.
+    text = _EXCESS_WHITESPACE.sub(" ", text)
+    # 2. Insert paragraph breaks at sentence boundaries before bullet-like words.
+    text = _BULLET_STARTERS.sub(".\n\n", text)
+    # 3. Strip leading/trailing whitespace from each line.
+    lines = [line.strip() for line in text.splitlines()]
+    text = "\n".join(lines)
+    # 4. Collapse more than two consecutive newlines.
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
 # SerpAPI result → RawJobPosting helper
 # ---------------------------------------------------------------------------
 
@@ -185,7 +231,8 @@ def _serpapi_job_to_raw(job: dict) -> RawJobPosting:
         items: list[str] = highlight.get("items", [])
         if items:
             description_parts.extend(items)
-    description = "\n".join(description_parts) or job.get("description", "") or ""
+    raw_description = "\n".join(description_parts) or job.get("description", "") or ""
+    description = _format_description(raw_description)
 
     # Salary
     salary_raw: Optional[str] = detected.get("salary")

@@ -184,8 +184,18 @@ class Normalizer:
             elif any(city in loc_lower for city in ("vancouver", "burnaby", "richmond", "surrey")):
                 is_remote = False
 
-        salary_min, salary_max = _parse_salary_raw(raw.salary_raw)
-        salary_source = "regex" if salary_min is not None else None
+        from src.processing.salary import SalaryExtractor
+        _extractor = SalaryExtractor()
+        # Prefer structured jobspy fields; fall back to regex on salary_raw / description.
+        salary_text = raw.salary_raw or raw.description
+        salary_min, salary_max, salary_source_str = _extractor.extract(
+            salary_text,
+            salary_min_raw=getattr(raw, "salary_min_raw", None),
+            salary_max_raw=getattr(raw, "salary_max_raw", None),
+            salary_currency=getattr(raw, "salary_currency", None),
+            salary_interval=getattr(raw, "salary_interval", None),
+        )
+        salary_source = salary_source_str if salary_min is not None else None
 
         return JobPosting(
             job_id=_make_job_id(raw.source.value, raw.url),

@@ -1,14 +1,20 @@
 """
-SalaryExtractor: regex-based extraction of salary ranges from Canadian job postings.
+SalaryExtractor: structured-field-first extraction of salary ranges from Canadian job postings.
+
+Priority order:
+  1. Structured fields from jobspy (salary_min_raw / salary_max_raw + salary_interval).
+  2. Regex on salary_raw string (already-formatted string from the scraper).
+  3. Regex on free-text description.
 
 Handles formats: "$120K", "$120,000", "$90K–$110K", "$45/hr", "120000 CAD",
 hourly-to-annual conversion (×2080). Returns (None, None, "unknown") when no
-salary found — never raises. Called by ScrapeRunner (TASK-013) after Normalizer.
+salary found — never raises. Called by Normalizer (TASK-013).
 """
 from __future__ import annotations
 
 import logging
 import re
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -57,23 +63,83 @@ def _is_plausible_annual(value: float) -> bool:
 
 class SalaryExtractor:
     """
-    Extracts salary range from free-text job postings.
+    Extracts salary range from job postings.
 
-    Returns (min_cad, max_cad, source) where source is 'regex' on success
-    or 'unknown' when no salary information is found.
+    Tries structured jobspy fields first (most accurate), then regex on the
+    formatted salary_raw string, then regex on the description text.
 
-    All extraction is regex-only at PoC. LLM fallback is deferred to
-    Milestone 4 per TASK-012 implementation notes.
+    Returns (min_cad, max_cad, source) where source is:
+      'source_field' — structured salary from jobspy (LinkedIn / Indeed)
+      'regex'        — extracted via regex from salary_raw or description
+      'unknown'      — no salary information found
+
+    All extraction at PoC. LLM fallback deferred to Milestone 4.
     """
 
-    def extract(self, text: str) -> tuple[float | None, float | None, str]:
-        """
-        Parse salary from text.
+    _USD_TO_CAD = 1.36  # approximate conversion rate; good enough for PoC filtering
 
-        Returns:
-            (min_cad, max_cad, source) where source = 'regex' | 'unknown'
-            (None, None, 'unknown') when no salary is found.
+    def extract(
+        self,
+        text: str,
+        *,
+        salary_min_raw: Optional[float] = None,
+        salary_max_raw: Optional[float] = None,
+        salary_currency: Optional[str] = None,
+        salary_interval: Optional[str] = None,
+    ) -> tuple[float | None, float | None, str]:
         """
+        Parse salary.
+
+        Parameters
+        ----------
+        text:
+            Free-text description (used as regex fallback).
+        salary_min_raw, salary_max_raw:
+            Structured amounts from jobspy (may be None).
+        salary_currency:
+            ISO currency code from jobspy (e.g. 'CAD', 'USD').
+        salary_interval:
+            'yearly' | 'hourly' | 'monthly' from jobspy.
+
+        Returns
+        -------
+        (min_cad, max_cad, source) or (None, None, 'unknown').
+        """
+        # --- 0. Structured fields — highest priority ---
+        if salary_min_raw is not None:
+            lo = salary_min_raw
+            hi = salary_max_raw if salary_max_raw is not None else salary_min_raw
+
+            # Annualise if hourly
+            if salary_interval and salary_interval.lower() == "hourly":
+                lo = round(lo * HOURS_PER_YEAR)
+                hi = round(hi * HOURS_PER_YEAR)
+            elif salary_interval and salary_interval.lower() == "monthly":
+                lo = round(lo * 12)
+                hi = round(hi * 12)
+            else:
+                lo = round(lo)
+                hi = round(hi)
+
+            # Currency conversion (USD → CAD); other currencies kept as-is.
+            currency_upper = (salary_currency or "CAD").upper()
+            if currency_upper == "USD":
+                lo = round(lo * self._USD_TO_CAD)
+                hi = round(hi * self._USD_TO_CAD)
+
+            lo, hi = min(lo, hi), max(lo, hi)
+            if _is_plausible_annual(lo) or _is_plausible_annual(hi):
+                logger.debug(
+                    "Salary extracted via source_field",
+                    extra={"min": lo, "max": hi, "interval": salary_interval, "currency": salary_currency},
+                )
+                return float(lo), float(hi), "source_field"
+
+        # --- Regex fallback on description text ---
+        return self._extract_from_text(text)
+
+    def _extract_from_text(self, text: str) -> tuple[float | None, float | None, str]:
+        """Regex extraction from free-text (salary_raw string or description)."""
         if not text:
             return None, None, "unknown"
 
