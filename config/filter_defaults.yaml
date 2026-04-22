@@ -3,8 +3,65 @@
 # Per TDD §7 and PRD §6.
 
 location:
-  allowed: ["Vancouver, BC", "Remote"]
-  remote_keywords: ["remote", "work from home", "wfh", "distributed"]
+  # Metro Vancouver municipalities (case-insensitive substring match)
+  metro_locations:
+    - "vancouver"
+    - "burnaby"
+    - "richmond"
+    - "surrey"
+    - "coquitlam"
+    - "north vancouver"
+    - "west vancouver"
+    - "new westminster"
+    - "delta"
+    - "langley"
+    - "maple ridge"
+    - "port moody"
+    - "port coquitlam"
+    - "pitt meadows"
+    - "white rock"
+    - "abbotsford"
+  # Keywords that indicate a remote-friendly posting
+  remote_keywords:
+    - "remote"
+    - "work from home"
+    - "wfh"
+    - "distributed"
+  # US city/state patterns that disqualify a "remote" posting as non-Canadian.
+  # If any of these appear in the location string, the posting is excluded
+  # even when is_remote=True or the location contains a remote keyword.
+  non_canadian_patterns:
+    - ", tx"
+    - ", ny"
+    - ", ca"    # California — note: "CA" alone is ambiguous, so we match ", ca"
+    - ", wa"
+    - ", or"
+    - ", il"
+    - ", ma"
+    - ", co"
+    - ", fl"
+    - ", ga"
+    - ", nc"
+    - ", nj"
+    - ", oh"
+    - ", mi"
+    - ", mn"
+    - ", az"
+    - ", va"
+    - ", pa"
+    - ", tn"
+    - ", mo"
+    - ", in"
+    - "united states"
+    - ", usa"
+    - " usa"
+    - ", u.s."
+    - "austin"
+    - "new york, ny"
+    - "san francisco"
+    - "seattle, wa"
+    - "chicago, il"
+    - "boston, ma"
 
 seniority:
   excluded_keywords: ["principal", "staff", "director", "vp", "head of", "lead"]

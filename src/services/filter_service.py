@@ -46,20 +46,27 @@ _MICRO_SIZE_LABELS: frozenset[str] = frozenset({
     "1-10 employees",
 })
 
-# Location keywords that qualify a posting as "Vancouver"
-_VANCOUVER_KEYWORDS: frozenset[str] = frozenset({
+# Default metro Vancouver municipalities (case-insensitive substring match).
+# Loaded from config/filter_defaults.yaml at runtime; this constant is a
+# fallback for direct FilterService construction without a config file.
+_DEFAULT_METRO_LOCATIONS: tuple[str, ...] = (
     "vancouver",
     "burnaby",
     "richmond",
     "surrey",
+    "coquitlam",
     "north vancouver",
     "west vancouver",
     "new westminster",
-    "coquitlam",
+    "delta",
+    "langley",
+    "maple ridge",
     "port moody",
-    "bc",
-    "british columbia",
-})
+    "port coquitlam",
+    "pitt meadows",
+    "white rock",
+    "abbotsford",
+)
 
 _REMOTE_KEYWORDS: frozenset[str] = frozenset({
     "remote",
@@ -68,6 +75,41 @@ _REMOTE_KEYWORDS: frozenset[str] = frozenset({
     "distributed",
     "anywhere",
 })
+
+# US city/state patterns that disqualify a "remote" posting as non-Canadian.
+# Matched case-insensitively against the full location string.
+_NON_CANADIAN_PATTERNS: tuple[str, ...] = (
+    ", tx",
+    ", ny",
+    ", wa",
+    ", or",
+    ", il",
+    ", ma",
+    ", co",
+    ", fl",
+    ", ga",
+    ", nc",
+    ", nj",
+    ", oh",
+    ", mi",
+    ", mn",
+    ", az",
+    ", va",
+    ", pa",
+    ", tn",
+    ", mo",
+    ", in",
+    "united states",
+    ", usa",
+    " usa",
+    ", u.s.",
+    "austin",
+    "new york, ny",
+    "san francisco",
+    "seattle, wa",
+    "chicago, il",
+    "boston, ma",
+)
 
 AnyPosting = Union[JobPosting, NormalizedJobPosting]
 
@@ -85,11 +127,14 @@ class FilterConfig:
     All fields default to None (disabled). Set a field to activate that filter.
 
     Attributes:
-        locations:              If set, only postings matching one of these location
-                                strings (case-insensitive substring) are kept.
-                                Use ["Vancouver"] for Vancouver-only.
-                                Use ["Remote"] to keep remote-friendly.
-                                A posting is a 'pass' if its location matches ANY entry.
+        locations:              Legacy field — if set alongside metro_locations=None,
+                                treated as a simple substring list for backward
+                                compatibility. Prefer metro_locations for new callers.
+        metro_locations:        If set, a posting passes the location filter when its
+                                location contains any of these strings (case-insensitive
+                                substring).  Defaults to _DEFAULT_METRO_LOCATIONS (all
+                                Metro Vancouver municipalities).  Set to None to disable
+                                the location filter entirely.
         min_salary_cad:         Exclude postings whose KNOWN salary max is below this
                                 threshold. Postings with unknown salary always pass.
         max_seniority:          Exclude postings at or above this seniority level.
@@ -97,10 +142,16 @@ class FilterConfig:
                                 Postings with unknown seniority always pass.
         company_size_exclude:   Exact Indeed company_employees_label strings to exclude.
                                 Postings with unknown/missing size always pass.
-        allow_remote:           When True, postings flagged as remote always pass the
-                                location filter (regardless of `locations`).
+        allow_remote:           When True, postings whose location contains a remote
+                                keyword OR whose is_remote flag is True will pass the
+                                location filter — provided they do not have a known
+                                non-Canadian location.
     """
+    # Legacy simple substring list (kept for backward-compatible test construction).
     locations: list[str] | None = None
+    # Metro Vancouver municipality list. When set (even to []), this takes precedence
+    # over `locations`.  When None, the location filter is disabled.
+    metro_locations: list[str] | None = field(default_factory=lambda: list(_DEFAULT_METRO_LOCATIONS))
     min_salary_cad: float | None = None
     max_seniority: str | None = None
     company_size_exclude: list[str] | None = None
@@ -172,9 +223,17 @@ def _seniority_rank(level: SeniorityLevel) -> int:
         return -1  # unknown → not ranked
 
 
-def _is_remote(posting: AnyPosting) -> bool:
+def _is_remote_posting(posting: AnyPosting) -> bool:
+    """Return True if the posting is remote based on is_remote flag or location text."""
+    if getattr(posting, "is_remote", None) is True:
+        return True
     loc = _get_location(posting)
     return any(kw in loc for kw in _REMOTE_KEYWORDS)
+
+
+def _is_non_canadian(loc_lower: str) -> bool:
+    """Return True if the location string explicitly names a non-Canadian place."""
+    return any(pattern in loc_lower for pattern in _NON_CANADIAN_PATTERNS)
 
 
 def _location_matches(posting: AnyPosting, locations: list[str]) -> bool:
@@ -184,6 +243,51 @@ def _location_matches(posting: AnyPosting, locations: list[str]) -> bool:
         if filter_loc.lower() in loc:
             return True
     return False
+
+
+def _check_location(posting: AnyPosting, config: "FilterConfig") -> str | None:
+    """
+    Apply the expanded location filter.
+
+    Returns None (pass) or an exclusion reason string (fail).
+
+    Logic:
+    1. Determine the effective municipality list (metro_locations takes priority
+       over legacy `locations`).
+    2. If no location filter is active, pass unconditionally.
+    3. A posting passes if:
+       a. Its location contains any metro municipality, OR
+       b. allow_remote=True AND (is_remote flag OR location contains a remote
+          keyword) AND the location does NOT contain a non-Canadian pattern.
+    4. Everything else is excluded.
+    """
+    # Resolve which location list to use
+    if config.metro_locations is not None:
+        active_list = config.metro_locations
+    elif config.locations is not None:
+        active_list = config.locations
+    else:
+        # Both None — location filter disabled
+        return None
+
+    loc = _get_location(posting)
+    loc_display = posting.location or "(no location)"
+
+    # Pass if location matches a metro municipality
+    for municipality in active_list:
+        if municipality.lower() in loc:
+            return None  # pass
+
+    # Pass if remote-allowed AND posting is remote AND Canadian context
+    if config.allow_remote and _is_remote_posting(posting):
+        if _is_non_canadian(loc):
+            return (
+                f"location: {loc_display} not in metro Vancouver or remote-CA"
+                f" (non-Canadian location)"
+            )
+        return None  # pass — remote with Canadian/ambiguous location
+
+    return f"location: {loc_display} not in metro Vancouver or remote-CA"
 
 
 # ---------------------------------------------------------------------------
@@ -230,14 +334,8 @@ class FilterService:
             exclusion_reason: str | None = None
 
             # --- Location filter ---
-            if config.locations is not None and exclusion_reason is None:
-                is_remote_post = _is_remote(posting)
-                passes_remote = config.allow_remote and is_remote_post
-                passes_location = _location_matches(posting, config.locations)
-
-                if not passes_remote and not passes_location:
-                    loc_display = posting.location or "(no location)"
-                    exclusion_reason = f"Location '{loc_display}' not in {config.locations}"
+            if exclusion_reason is None:
+                exclusion_reason = _check_location(posting, config)
 
             # --- Seniority filter ---
             if config.max_seniority is not None and exclusion_reason is None:

@@ -98,10 +98,17 @@ def _seed_user_settings(engine: Engine) -> None:
     seniority_excluded = defaults.get("seniority", {}).get("excluded_keywords", [])
     salary_floor = defaults.get("salary", {}).get("floor_cad")
     location_cfg = defaults.get("location", {})
-    allowed = location_cfg.get("allowed", [])
 
-    # Map allowed locations to LocationPreference enum value
-    if "Remote" in allowed and "Vancouver, BC" in allowed:
+    # Support both old schema (allowed: [...]) and new schema (metro_locations: [...])
+    allowed = location_cfg.get("allowed", [])
+    metro_locations = location_cfg.get("metro_locations", [])
+    remote_keywords = location_cfg.get("remote_keywords", [])
+
+    # Map to LocationPreference enum value.
+    # New config: metro_locations present + remote_keywords present → 'both'
+    if metro_locations and remote_keywords:
+        location_pref = "both"
+    elif "Remote" in allowed and "Vancouver, BC" in allowed:
         location_pref = "both"
     elif "Remote" in allowed:
         location_pref = "remote_friendly"

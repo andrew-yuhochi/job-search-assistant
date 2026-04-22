@@ -196,25 +196,82 @@ class TestSeniorityInferrer:
 class TestFilterServiceLocation:
     svc = FilterService()
 
-    def test_vancouver_only_excludes_toronto(self):
-        """FilterConfig(locations=['Vancouver']) excludes 'Toronto, ON' posting."""
+    def test_metro_vancouver_excludes_toronto(self):
+        """Default metro_locations config excludes 'Toronto, ON' posting."""
         posting = make_posting(job_id="t1", location="Toronto, ON")
-        config = FilterConfig(locations=["vancouver"])
+        config = FilterConfig()  # uses default metro_locations
         result = self.svc.apply([posting], config)
         assert result.excluded_count == 1
         assert result.kept_count == 0
         assert "Toronto, ON" in result.excluded[0][1]
 
-    def test_vancouver_only_keeps_vancouver(self):
+    def test_metro_vancouver_keeps_vancouver(self):
         posting = make_posting(job_id="t2", location="Vancouver, BC, Canada")
-        config = FilterConfig(locations=["vancouver"])
+        config = FilterConfig()
         result = self.svc.apply([posting], config)
         assert result.kept_count == 1
 
-    def test_remote_passes_location_filter(self):
-        """Remote postings pass even if location filter is 'Vancouver'."""
+    def test_burnaby_passes(self):
+        """Burnaby is a metro Vancouver municipality and should pass."""
+        posting = make_posting(job_id="t4", location="Burnaby, BC")
+        config = FilterConfig()
+        result = self.svc.apply([posting], config)
+        assert result.kept_count == 1
+
+    def test_surrey_passes(self):
+        """Surrey is a metro Vancouver municipality and should pass."""
+        posting = make_posting(job_id="t5", location="Surrey, BC, Canada")
+        config = FilterConfig()
+        result = self.svc.apply([posting], config)
+        assert result.kept_count == 1
+
+    def test_remote_canadian_passes(self):
+        """Remote postings with no explicit location pass as remote-CA."""
+        posting = make_posting(job_id="t6", location="Remote", is_remote=True)
+        config = FilterConfig(allow_remote=True)
+        result = self.svc.apply([posting], config)
+        assert result.kept_count == 1
+
+    def test_remote_canada_explicit_passes(self):
+        """'Canada Remote' location string passes as remote-CA."""
+        posting = make_posting(job_id="t7", location="Canada Remote")
+        config = FilterConfig(allow_remote=True)
+        result = self.svc.apply([posting], config)
+        assert result.kept_count == 1
+
+    def test_remote_non_canadian_excluded(self):
+        """Remote posting with 'Austin, TX' excluded even when is_remote=True."""
+        posting = make_posting(job_id="t8", location="Austin, TX", is_remote=True)
+        config = FilterConfig(allow_remote=True)
+        result = self.svc.apply([posting], config)
+        assert result.excluded_count == 1
+        assert "Austin, TX" in result.excluded[0][1]
+
+    def test_remote_new_york_excluded(self):
+        """Remote posting with 'New York, NY' excluded."""
+        posting = make_posting(job_id="t9", location="New York, NY", is_remote=True)
+        config = FilterConfig(allow_remote=True)
+        result = self.svc.apply([posting], config)
+        assert result.excluded_count == 1
+
+    def test_remote_flag_true_location_blank_passes(self):
+        """is_remote=True with blank location treated as remote-CA (pass)."""
+        posting = make_posting(job_id="t10", location="", is_remote=True)
+        config = FilterConfig(allow_remote=True)
+        result = self.svc.apply([posting], config)
+        assert result.kept_count == 1
+
+    def test_remote_passes_location_filter_legacy(self):
+        """Backward-compat: Remote postings pass even with legacy locations list."""
         posting = make_posting(job_id="t3", location="Remote", is_remote=True)
-        config = FilterConfig(locations=["vancouver"], allow_remote=True)
+        config = FilterConfig(metro_locations=["vancouver"], allow_remote=True)
+        result = self.svc.apply([posting], config)
+        assert result.kept_count == 1
+
+    def test_location_filter_disabled_when_metro_locations_none(self):
+        """metro_locations=None disables the location filter entirely."""
+        posting = make_posting(job_id="t11", location="Toronto, ON")
+        config = FilterConfig(metro_locations=None, locations=None)
         result = self.svc.apply([posting], config)
         assert result.kept_count == 1
 
@@ -341,18 +398,18 @@ class TestFilterServiceCombined:
     svc = FilterService()
 
     def test_empty_list_returns_empty(self):
-        config = FilterConfig(locations=["vancouver"], min_salary_cad=120_000)
+        config = FilterConfig(min_salary_cad=120_000)
         result = self.svc.apply([], config)
         assert result.kept_count == 0
         assert result.excluded_count == 0
 
-    def test_no_config_passes_all(self):
-        """No active filters → all postings pass with no badges."""
+    def test_no_location_config_passes_all_locations(self):
+        """metro_locations=None disables location filter → all postings pass."""
         postings = [
             make_posting("c1", location="Toronto", salary_min=50_000, salary_max=50_000),
             make_posting("c2", location="Remote"),
         ]
-        config = FilterConfig()  # all None
+        config = FilterConfig(metro_locations=None, locations=None)  # location filter off
         result = self.svc.apply(postings, config)
         assert result.kept_count == 2
         assert result.excluded_count == 0
