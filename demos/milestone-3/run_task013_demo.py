@@ -16,6 +16,16 @@ import os
 # Ensure the project root is on the path so `src` imports resolve.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+# Load .env from the project root before any src imports so that
+# SERPAPI_API_KEY and other env vars are available to os.environ.
+from pathlib import Path
+_project_root = Path(__file__).resolve().parents[2]
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_project_root / ".env", override=False)
+except ImportError:
+    pass  # python-dotenv not installed; rely on shell environment
+
 import logging
 import time
 from datetime import datetime, timezone
@@ -66,7 +76,7 @@ def main() -> None:
 
     query = SearchQuery(
         search_term="data scientist",
-        location="Vancouver, BC, Canada",
+        location="Vancouver, British Columbia, Canada",
         results_wanted=25,
     )
 
