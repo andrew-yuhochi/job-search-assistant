@@ -80,16 +80,10 @@ class GoogleJobsSource(JobSource):
             "q": query.search_term,
             "location": query.location,
             "api_key": self._api_key,
+            "gl": "ca",
+            "hl": "en",
             "num": min(results_wanted, 10),  # SerpAPI Google Jobs returns up to 10 per page
         }
-        if query.hours_old:
-            # Map hours_old to SerpAPI's chips parameter: past 24h / 3d / week
-            if query.hours_old <= 24:
-                params["chips"] = "date_posted:today"
-            elif query.hours_old <= 72:
-                params["chips"] = "date_posted:3days"
-            elif query.hours_old <= 168:
-                params["chips"] = "date_posted:week"
 
         try:
             search = GoogleSearch(params)
@@ -138,6 +132,129 @@ class GoogleJobsSource(JobSource):
 
         logger.info("GoogleJobsSource: converted %d postings", len(postings))
         return postings
+
+    def fetch_multi(
+        self,
+        term_location_pairs: list[tuple[str, str]],
+        hours_old: int,
+        results_wanted_per_pair: int,
+    ) -> list[RawJobPosting]:
+        """
+        Fetch Google Jobs postings for multiple (search_term, location) pairs.
+
+        Combines all unique terms into a single OR query per location to minimise
+        SerpAPI quota usage.  Runs one query per unique location (typically 2).
+        Deduplicates by job_url if present, else by job_id (first occurrence wins).
+
+        Args:
+            term_location_pairs:      List of (search_term, location) tuples.
+            hours_old:                Unused for Google Jobs (chips param removed).
+            results_wanted_per_pair:  Max results requested per SerpAPI call.
+
+        Returns:
+            Deduplicated list of RawJobPosting across all location queries.
+        """
+        if not self._api_key:
+            raise RuntimeError(
+                f"{_API_KEY_ENV} is not set. Google Jobs source is unavailable."
+            )
+        if GoogleSearch is None:
+            raise ImportError(
+                "google-search-results is not installed. Add it to requirements.txt."
+            )
+
+        # Build unique terms and locations from the pairs
+        unique_terms: list[str] = []
+        seen_terms: set[str] = set()
+        unique_locations: list[str] = []
+        seen_locs: set[str] = set()
+        for term, location in term_location_pairs:
+            if term not in seen_terms:
+                unique_terms.append(term)
+                seen_terms.add(term)
+            if location not in seen_locs:
+                unique_locations.append(location)
+                seen_locs.add(location)
+
+        # Combine all terms into a single OR query
+        combined_query = " OR ".join(f'"{t}"' for t in unique_terms)
+        logger.info(
+            "GoogleJobsSource.fetch_multi: combined query=%r, locations=%r",
+            combined_query, unique_locations,
+        )
+
+        all_postings: list[RawJobPosting] = []
+        seen_ids: set[str] = set()  # dedup by url or job_id
+
+        for location in unique_locations:
+            logger.info(
+                "GoogleJobsSource: fetching combined query for location=%r", location
+            )
+            params: dict[str, Any] = {
+                "engine": "google_jobs",
+                "q": combined_query,
+                "location": location,
+                "api_key": self._api_key,
+                "gl": "ca",
+                "hl": "en",
+                "num": min(results_wanted_per_pair, 10),
+            }
+
+            try:
+                search = GoogleSearch(params)
+                results = search.get_dict()
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                if (
+                    "rate limit" in exc_str
+                    or "quota" in exc_str
+                    or "429" in exc_str
+                    or "plan" in exc_str
+                ):
+                    raise RateLimitError(self.name) from exc
+                logger.warning(
+                    "GoogleJobsSource.fetch_multi: error for location=%r: %s",
+                    location, exc,
+                )
+                continue
+
+            if "error" in results:
+                error_msg = results["error"]
+                if any(k in error_msg.lower() for k in ("rate", "quota", "plan", "limit")):
+                    raise RateLimitError(self.name, error_msg)
+                logger.warning(
+                    "GoogleJobsSource.fetch_multi: API error for location=%r — %s",
+                    location, error_msg,
+                )
+                continue
+
+            jobs_results: list[dict] = results.get("jobs_results", [])
+            logger.info(
+                "GoogleJobsSource.fetch_multi: %d raw results for location=%r",
+                len(jobs_results), location,
+            )
+
+            for job in jobs_results[:results_wanted_per_pair]:
+                try:
+                    posting = _serpapi_job_to_raw(job)
+                    # Dedup: prefer URL, fall back to job_id
+                    dedup_key = posting.url if posting.url else posting.id
+                    if dedup_key and dedup_key in seen_ids:
+                        continue
+                    if dedup_key:
+                        seen_ids.add(dedup_key)
+                    all_postings.append(posting)
+                except Exception as exc:
+                    logger.warning(
+                        "GoogleJobsSource.fetch_multi: skipping malformed result title=%r — %s",
+                        job.get("title"), exc,
+                    )
+
+        logger.info(
+            "GoogleJobsSource.fetch_multi: %d unique postings across %d locations",
+            len(all_postings), len(unique_locations),
+        )
+        return all_postings
 
 
 # ---------------------------------------------------------------------------

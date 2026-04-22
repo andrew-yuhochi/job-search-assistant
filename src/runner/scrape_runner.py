@@ -20,16 +20,24 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Any, Callable, Optional
 
+import yaml
 from sqlalchemy.engine import Engine
 
-from src.models.models import JobPosting, SeniorityLevel
+from src.models.models import JobPosting, RawJobPosting, SeniorityLevel
 from src.processing.normalizer import Normalizer
 from src.processing.salary import SalaryExtractor
 from src.processing.seniority import SeniorityInferrer
 from src.services.dedup import DedupService
-from src.services.filter_service import FilterConfig, FilterService
+from src.services.filter_service import (
+    FilterConfig,
+    FilterService,
+    _TITLE_ALLOWLIST,
+    _TITLE_DENYLIST,
+    title_passes,
+)
 from src.sources.base import SearchQuery
 from src.sources.registry import JobSourceRegistry
 from src.storage import repository
@@ -54,11 +62,11 @@ class ScrapeConfig:
     Attributes:
         filter_config:  FilterService configuration (salary floor, location, seniority, size).
         user_id:        Multi-tenant user scope (default 'local').
-        dedup_window_days: How many days back to look for cross-run duplicates (default 30).
+        dedup_window_days: How many days back to look for cross-run duplicates (default 90).
     """
     filter_config: FilterConfig = field(default_factory=FilterConfig)
     user_id: str = "local"
-    dedup_window_days: int = 30
+    dedup_window_days: int = 90
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +127,186 @@ class ScrapeRunner:
         self._salary_extractor = SalaryExtractor()
         self._seniority_inferrer = SeniorityInferrer()
         self._dedup_service = DedupService()
+        # Load scrape config and apply dedup_window_days override from yaml
+        self._scrape_cfg = self._load_scrape_config()
+        self._config.dedup_window_days = (
+            self._scrape_cfg.get("dedup", {}).get("window_days", 90)
+        )
+
+    # ------------------------------------------------------------------
+    # Config loader
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_scrape_config() -> dict[str, Any]:
+        """
+        Load config/scrape_config.yaml relative to the project root.
+
+        Returns the parsed YAML dict, or a dict with defaults if the file is
+        missing or unreadable.  Never raises — config loading must not crash
+        the pipeline.
+        """
+        _defaults: dict[str, Any] = {
+            "search": {
+                "terms": ["data scientist", "machine learning engineer", "applied scientist", "data analyst"],
+                "locations": ["Vancouver, BC, Canada", "Canada"],
+                "results_wanted_per_term_location": 30,
+                "hours_old": 72,
+            },
+            "dedup": {"window_days": 90},
+            "logging": {"run_logs_dir": "logs"},
+        }
+        # Resolve path relative to this file's directory (src/runner/) → project root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        config_path = project_root / "config" / "scrape_config.yaml"
+        try:
+            with open(config_path, "r", encoding="utf-8") as fh:
+                loaded = yaml.safe_load(fh) or {}
+            logger.info("ScrapeRunner: loaded scrape config from %s", config_path)
+            return loaded
+        except FileNotFoundError:
+            logger.warning(
+                "ScrapeRunner: %s not found — using defaults", config_path
+            )
+            return _defaults
+        except Exception as exc:
+            logger.warning(
+                "ScrapeRunner: failed to load scrape config: %s — using defaults", exc
+            )
+            return _defaults
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _write_stage_log(self, run_id: int, stage_file: str, data: Any) -> None:
+        """
+        Write a JSON diagnostic log file for a pipeline stage.
+
+        Files are written to logs/run_{run_id}/{stage_file}.  Failures are
+        swallowed and logged as warnings — stage logs must never crash the pipeline.
+        """
+        try:
+            log_dir = (
+                Path(self._scrape_cfg.get("logging", {}).get("run_logs_dir", "logs"))
+                / f"run_{run_id}"
+            )
+            log_dir.mkdir(parents=True, exist_ok=True)
+            with open(log_dir / stage_file, "w") as f:
+                json.dump(data, f, indent=2, default=str)
+        except Exception as exc:
+            logger.warning(
+                "ScrapeRunner: failed to write stage log %s: %s", stage_file, exc
+            )
+
+    def _fetch_from_sources(
+        self,
+        term_location_pairs: list[tuple[str, str]],
+        hours_old: int,
+        results_wanted_per_pair: int,
+        query: SearchQuery,
+    ) -> tuple[list[RawJobPosting], dict[str, dict]]:
+        """
+        Fetch from all registered sources using fetch_multi where available.
+
+        For sources that implement fetch_multi(), calls it with the config-driven
+        term_location_pairs.  Falls back to fetch(query) for sources that do not.
+
+        If the registry does not expose _sources directly (e.g. in tests where
+        the registry is a mock), falls back to the legacy fetch_all() path so
+        that existing test mocks continue to work.
+
+        Returns:
+            (all_raw_postings, source_summary_dict)
+        """
+        from src.sources.base import RateLimitError  # avoid circular at module level
+
+        # -- Try direct _sources access (real registry) --
+        sources_dict: dict | None = None
+        try:
+            sources_dict = self._registry._sources
+        except AttributeError:
+            sources_dict = None
+
+        if sources_dict is None:
+            # Fallback: legacy fetch_all() path (used in tests with mock registries)
+            fetch_results = self._registry.fetch_all(query)
+            raw_postings: list[RawJobPosting] = []
+            source_summary: dict[str, dict] = {}
+            for source_name, result in fetch_results.items():
+                if result.status == "ok":
+                    raw_postings.extend(result.postings)
+                    source_summary[source_name] = {
+                        "status": "ok",
+                        "count": result.count,
+                    }
+                elif result.status == "rate_limited":
+                    source_summary[source_name] = {
+                        "status": "rate_limited",
+                        "error": result.error,
+                        "count": 0,
+                    }
+                else:
+                    source_summary[source_name] = {
+                        "status": "error",
+                        "error": result.error,
+                        "count": 0,
+                    }
+            return raw_postings, source_summary
+
+        # -- Direct source dispatch with fetch_multi support --
+        raw_postings = []
+        source_summary = {}
+
+        for source_name, source in sources_dict.items():
+            if not source.is_available():
+                logger.warning(
+                    "ScrapeRunner: source '%s' is not available — skipping", source_name
+                )
+                source_summary[source_name] = {
+                    "status": "error",
+                    "error": f"Source '{source_name}' not available",
+                    "count": 0,
+                }
+                continue
+
+            try:
+                if hasattr(source, "fetch_multi"):
+                    postings = source.fetch_multi(
+                        term_location_pairs, hours_old, results_wanted_per_pair
+                    )
+                else:
+                    postings = source.fetch(query)
+
+                raw_postings.extend(postings)
+                source_summary[source_name] = {
+                    "status": "ok",
+                    "count": len(postings),
+                }
+                logger.info(
+                    "ScrapeRunner: %s → %d postings", source_name, len(postings)
+                )
+            except RateLimitError as exc:
+                source_summary[source_name] = {
+                    "status": "rate_limited",
+                    "error": str(exc),
+                    "count": 0,
+                }
+                logger.warning(
+                    "ScrapeRunner: rate limit on '%s': %s", source_name, exc
+                )
+            except Exception as exc:
+                source_summary[source_name] = {
+                    "status": "error",
+                    "error": str(exc),
+                    "count": 0,
+                }
+                logger.error(
+                    "ScrapeRunner: error from '%s': %s", source_name, exc,
+                    exc_info=True,
+                )
+
+        return raw_postings, source_summary
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -155,42 +343,56 @@ class ScrapeRunner:
         )
         _status(f"Scrape run #{run_id} started")
 
-        rate_limited: list[str] = []
-        source_errors: dict[str, str] = {}
-
         # ----------------------------------------------------------------
-        # Stage 1: Fetch all sources
+        # Stage 1: Fetch all sources (config-driven multi-term fetch)
         # ----------------------------------------------------------------
         _status("Fetching postings from all sources…")
-        fetch_results = self._registry.fetch_all(query)
 
-        raw_postings = []
-        source_summary: dict[str, dict] = {}
-        for source_name, result in fetch_results.items():
-            if result.status == "ok":
-                raw_postings.extend(result.postings)
-                source_summary[source_name] = {
-                    "status": "ok",
-                    "count": result.count,
-                }
-                _status(f"  {source_name}: {result.count} raw postings")
-            elif result.status == "rate_limited":
-                rate_limited.append(source_name)
-                source_summary[source_name] = {
-                    "status": "rate_limited",
-                    "error": result.error,
-                }
-                _status(f"  {source_name}: RATE LIMITED — {result.error}")
+        search_cfg = self._scrape_cfg.get("search", {})
+        terms: list[str] = search_cfg.get("terms", [query.search_term])
+        locations: list[str] = search_cfg.get("locations", [query.location])
+        results_per_pair: int = search_cfg.get("results_wanted_per_term_location", 30)
+        hours_old: int = search_cfg.get("hours_old", query.hours_old or 72)
+
+        term_location_pairs = [
+            (term, location) for term in terms for location in locations
+        ]
+
+        raw_postings, source_summary = self._fetch_from_sources(
+            term_location_pairs, hours_old, results_per_pair, query
+        )
+
+        rate_limited: list[str] = []
+        source_errors: dict[str, str] = {}
+        for src_name, info in source_summary.items():
+            if info["status"] == "rate_limited":
+                rate_limited.append(src_name)
+                _status(f"  {src_name}: RATE LIMITED — {info.get('error', '')}")
+            elif info["status"] == "error":
+                source_errors[src_name] = info.get("error", "(unknown error)")
+                _status(f"  {src_name}: ERROR — {info.get('error', '')}")
             else:
-                source_errors[source_name] = result.error or "(unknown error)"
-                source_summary[source_name] = {
-                    "status": "error",
-                    "error": result.error,
-                }
-                _status(f"  {source_name}: ERROR — {result.error}")
+                _status(f"  {src_name}: {info['count']} raw postings")
 
         fetched_count = len(raw_postings)
         _status(f"Fetched {fetched_count} total raw postings")
+
+        # Stage 1 diagnostic log
+        self._write_stage_log(
+            run_id,
+            "01_fetch_raw.json",
+            [
+                {
+                    "id": p.id,
+                    "title": p.title,
+                    "company": p.company,
+                    "location": p.location,
+                    "url": p.url,
+                    "source": p.source.value,
+                }
+                for p in raw_postings
+            ],
+        )
 
         # ----------------------------------------------------------------
         # Stage 2: Normalize
@@ -209,6 +411,25 @@ class ScrapeRunner:
                 )
         normalized_count = len(normalized)
         _status(f"Normalized {normalized_count} postings")
+
+        # Stage 2 diagnostic log
+        self._write_stage_log(
+            run_id,
+            "02_normalized.json",
+            [
+                {
+                    "job_id": j.job_id,
+                    "title": j.title,
+                    "company": j.company,
+                    "location": j.location,
+                    "salary_min_cad": j.salary_min_cad,
+                    "salary_max_cad": j.salary_max_cad,
+                    "seniority": j.seniority.value,
+                    "source": j.source.value,
+                }
+                for j in normalized
+            ],
+        )
 
         # ----------------------------------------------------------------
         # Stage 3: Salary extraction + seniority enrichment
@@ -238,6 +459,25 @@ class ScrapeRunner:
                     )
             except Exception as exc:
                 logger.warning("ScrapeRunner: seniority inference failed: %s", exc)
+
+        # Stage 3 diagnostic log (post-enrichment)
+        self._write_stage_log(
+            run_id,
+            "03_enriched.json",
+            [
+                {
+                    "job_id": j.job_id,
+                    "title": j.title,
+                    "company": j.company,
+                    "location": j.location,
+                    "salary_min_cad": j.salary_min_cad,
+                    "salary_max_cad": j.salary_max_cad,
+                    "seniority": j.seniority.value,
+                    "source": j.source.value,
+                }
+                for j in normalized
+            ],
+        )
 
         # ----------------------------------------------------------------
         # Stage 4: Dedup
@@ -291,6 +531,62 @@ class ScrapeRunner:
             f"Dedup complete: {len(canonical_jobs)} canonical, {dup_count} duplicates"
         )
 
+        # Stage 4 diagnostic log
+        _today = datetime.now(timezone.utc)
+        dedup_log = []
+        for job in normalized:
+            if job.duplicate_of:
+                dedup_log.append({
+                    "job_id": job.job_id,
+                    "title": job.title,
+                    "decision": "duplicate",
+                    "matched_job_id": job.duplicate_of,
+                })
+            elif job in canonical_jobs:
+                dedup_log.append({
+                    "job_id": job.job_id,
+                    "title": job.title,
+                    "decision": "canonical",
+                    "matched_job_id": None,
+                })
+            else:
+                dedup_log.append({
+                    "job_id": job.job_id,
+                    "title": job.title,
+                    "decision": "within_run_dup",
+                    "matched_job_id": None,
+                })
+        self._write_stage_log(run_id, "04_dedup.json", dedup_log)
+
+        # ----------------------------------------------------------------
+        # Stage 4.5: Title relevance filter
+        # ----------------------------------------------------------------
+        _status("Applying title relevance filter…")
+        title_kept: list[JobPosting] = []
+        title_filter_log: list[dict] = []
+        for job in canonical_jobs:
+            passed = title_passes(job.title)
+            if _TITLE_ALLOWLIST.search(job.title):
+                rule = "allowlist"
+            elif not passed:
+                rule = "denylist"
+            else:
+                rule = "unknown_pass"
+            title_filter_log.append({
+                "job_id": job.job_id,
+                "title": job.title,
+                "passed": passed,
+                "rule": rule,
+            })
+            if passed:
+                title_kept.append(job)
+        canonical_jobs = title_kept
+        _status(
+            f"Title filter: {len(canonical_jobs)} kept, "
+            f"{len(title_filter_log) - len(canonical_jobs)} dropped"
+        )
+        self._write_stage_log(run_id, "05_title_filter.json", title_filter_log)
+
         # ----------------------------------------------------------------
         # Stage 5: Filter
         # ----------------------------------------------------------------
@@ -303,6 +599,19 @@ class ScrapeRunner:
             f"Filter: {filter_result.kept_count} kept, "
             f"{filter_result.excluded_count} excluded"
         )
+
+        # Stage 5 (hard filter) diagnostic log
+        hard_filter_log = (
+            [
+                {"job_id": j.job_id, "title": j.title, "passed": True, "reason": None}
+                for j in filter_result.kept
+            ]
+            + [
+                {"job_id": p.job_id, "title": p.title, "passed": False, "reason": r}
+                for p, r in filter_result.excluded
+            ]
+        )
+        self._write_stage_log(run_id, "06_hard_filter.json", hard_filter_log)
 
         # ----------------------------------------------------------------
         # Stage 6 + 7: Store canonical kept jobs + duplicates + classification stubs
@@ -363,6 +672,9 @@ class ScrapeRunner:
                 )
 
         _status(f"Stored {stored_count} jobs, wrote {classified_stub_count} classification stubs")
+
+        # Stage 6 (stored) diagnostic log
+        self._write_stage_log(run_id, "07_stored.json", list(stored_job_ids))
 
         # ----------------------------------------------------------------
         # Stage 8: Update scrape_run row with final counts + error log

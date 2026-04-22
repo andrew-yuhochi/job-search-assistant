@@ -60,6 +60,7 @@ class IndeedSource(JobSource):
                 location=query.location,
                 results_wanted=results_wanted,
                 hours_old=query.hours_old,
+                country_indeed="Canada",
             )
         except Exception as exc:
             exc_str = str(exc).lower()
@@ -85,3 +86,87 @@ class IndeedSource(JobSource):
 
         logger.info("IndeedSource: converted %d postings", len(postings))
         return postings
+
+    def fetch_multi(
+        self,
+        term_location_pairs: list[tuple[str, str]],
+        hours_old: int,
+        results_wanted_per_pair: int,
+    ) -> list[RawJobPosting]:
+        """
+        Fetch Indeed postings for multiple (search_term, location) pairs.
+
+        Loops over all pairs, calls scrape_jobs() once per pair with
+        country_indeed="Canada" (fix for the 0-result bug).  All results
+        are merged and deduplicated by job_url (first occurrence wins).
+        No sleep between calls — Indeed does not require it.
+
+        Args:
+            term_location_pairs:      List of (search_term, location) tuples.
+            hours_old:                Hours window for freshness filter.
+            results_wanted_per_pair:  Max results requested per scrape_jobs() call.
+
+        Returns:
+            Deduplicated list of RawJobPosting across all pairs.
+        """
+        if scrape_jobs is None:
+            raise ImportError(
+                "python-jobspy is not installed. Add it to requirements.txt."
+            )
+
+        all_postings: list[RawJobPosting] = []
+        seen_urls: set[str] = set()
+
+        for term, location in term_location_pairs:
+            logger.info(
+                "IndeedSource: fetching term=%r location=%r", term, location
+            )
+            try:
+                df = scrape_jobs(
+                    site_name=["indeed"],
+                    search_term=term,
+                    location=location,
+                    results_wanted=min(results_wanted_per_pair, _MAX_RESULTS),
+                    hours_old=hours_old,
+                    country_indeed="Canada",
+                )
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                if "429" in exc_str or "rate limit" in exc_str or "too many" in exc_str:
+                    logger.warning(
+                        "IndeedSource.fetch_multi: rate limit on term=%r location=%r",
+                        term, location,
+                    )
+                    raise RateLimitError(self.name) from exc
+                logger.warning(
+                    "IndeedSource.fetch_multi: error on term=%r location=%r: %s",
+                    term, location, exc,
+                )
+                continue
+
+            if df is None or df.empty:
+                logger.info(
+                    "IndeedSource.fetch_multi: empty result for term=%r location=%r",
+                    term, location,
+                )
+                continue
+
+            for _, row in df.iterrows():
+                try:
+                    posting = _row_to_raw(row, SourceName.indeed)
+                    if posting.url and posting.url in seen_urls:
+                        continue
+                    if posting.url:
+                        seen_urls.add(posting.url)
+                    all_postings.append(posting)
+                except Exception as exc:
+                    logger.warning(
+                        "IndeedSource.fetch_multi: skipping malformed row id=%s — %s",
+                        row.get("id"), exc,
+                    )
+
+        logger.info(
+            "IndeedSource.fetch_multi: %d unique postings across %d pairs",
+            len(all_postings), len(term_location_pairs),
+        )
+        return all_postings

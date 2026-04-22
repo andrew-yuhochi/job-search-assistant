@@ -71,3 +71,34 @@ salary:
 
 company_size:
   min_employees: 50  # proxy: exclude micro-startups
+
+title_filter:
+  allowlist_patterns:
+    - "data scien"
+    - "machine learning"
+    - "ml engineer"
+    - "applied scien"
+    - "research scien"
+    - "ai engineer"
+    - "nlp engineer"
+    - "computer vision"
+    - "deep learning"
+    - "analytics engineer"
+    - "quantitative analyst"
+    - "decision scien"
+    - "data analyst"
+  denylist_patterns:
+    - "\\bqa\\b"
+    - "quality assurance"
+    - "backend engineer"
+    - "frontend engineer"
+    - "devops"
+    - "site reliability"
+    - "\\bsre\\b"
+    - "ux designer"
+    - "product designer"
+    - "graphic designer"
+    - "sales engineer"
+    - "solutions engineer"
+    - "account manager"
+    - "marketing"

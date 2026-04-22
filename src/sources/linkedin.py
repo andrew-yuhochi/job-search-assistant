@@ -11,6 +11,7 @@ Per TDD §2.1 and DATA-SOURCES.md Source 1.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Optional
 
 from src.models import RawJobPosting, SourceName
@@ -76,6 +77,79 @@ class LinkedInSource(JobSource):
             raise
 
         return self._df_to_postings(df)
+
+    def fetch_multi(
+        self,
+        term_location_pairs: list[tuple[str, str]],
+        hours_old: int,
+        results_wanted_per_pair: int,
+    ) -> list[RawJobPosting]:
+        """
+        Fetch LinkedIn postings for multiple (search_term, location) pairs.
+
+        Loops over all pairs, calls scrape_jobs() once per pair with a 2-second
+        delay between calls to respect LinkedIn guest-API rate limits.  All
+        results are merged and deduplicated by job_url (first occurrence wins).
+
+        Args:
+            term_location_pairs:      List of (search_term, location) tuples.
+            hours_old:                Hours window for freshness filter.
+            results_wanted_per_pair:  Max results requested per scrape_jobs() call.
+
+        Returns:
+            Deduplicated list of RawJobPosting across all pairs.
+        """
+        if scrape_jobs is None:
+            raise ImportError(
+                "python-jobspy is not installed. Add it to requirements.txt."
+            )
+
+        all_postings: list[RawJobPosting] = []
+        seen_urls: set[str] = set()
+
+        for idx, (term, location) in enumerate(term_location_pairs):
+            logger.info(
+                "LinkedInSource: fetching term=%r location=%r", term, location
+            )
+            if idx > 0:
+                time.sleep(2)
+
+            try:
+                df = scrape_jobs(
+                    site_name=["linkedin"],
+                    search_term=term,
+                    location=location,
+                    results_wanted=min(results_wanted_per_pair, _MAX_RESULTS),
+                    hours_old=hours_old,
+                    linkedin_fetch_description=True,
+                )
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                if "429" in exc_str or "rate limit" in exc_str or "too many" in exc_str:
+                    logger.warning(
+                        "LinkedInSource.fetch_multi: rate limit on term=%r location=%r",
+                        term, location,
+                    )
+                    raise RateLimitError(self.name) from exc
+                logger.warning(
+                    "LinkedInSource.fetch_multi: error on term=%r location=%r: %s",
+                    term, location, exc,
+                )
+                continue
+
+            batch = self._df_to_postings(df)
+            for posting in batch:
+                if posting.url and posting.url in seen_urls:
+                    continue
+                if posting.url:
+                    seen_urls.add(posting.url)
+                all_postings.append(posting)
+
+        logger.info(
+            "LinkedInSource.fetch_multi: %d unique postings across %d pairs",
+            len(all_postings), len(term_location_pairs),
+        )
+        return all_postings
 
     # ------------------------------------------------------------------
     # Private helpers

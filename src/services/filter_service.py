@@ -16,6 +16,7 @@ and before storage write.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Union
 
@@ -112,6 +113,45 @@ _NON_CANADIAN_PATTERNS: tuple[str, ...] = (
 )
 
 AnyPosting = Union[JobPosting, NormalizedJobPosting]
+
+# ---------------------------------------------------------------------------
+# Title relevance filter
+# ---------------------------------------------------------------------------
+
+_TITLE_ALLOWLIST = re.compile(
+    r"data\s+scien|machine\s+learning|ml\s+engineer|applied\s+scien|"
+    r"research\s+scien|ai\s+engineer|nlp\s+engineer|computer\s+vision|"
+    r"deep\s+learning|analytics\s+engineer|quantitative\s+analyst|"
+    r"decision\s+scien|data\s+analyst",
+    re.IGNORECASE,
+)
+
+_TITLE_DENYLIST = re.compile(
+    r"\bqa\b|quality\s+assurance|backend\s+engineer|frontend\s+engineer|"
+    r"devops|site\s+reliability|\bsre\b|ux\s+designer|product\s+designer|"
+    r"graphic\s+designer|sales\s+engineer|solutions\s+engineer|"
+    r"account\s+manager|marketing",
+    re.IGNORECASE,
+)
+
+
+def title_passes(title: str) -> bool:
+    """
+    Return True if the job title should pass the pre-classifier title filter.
+
+    Logic (per TASK-M4-000):
+    1. If the title matches the allowlist → True (pass immediately).
+    2. Else if the title matches the denylist → False (drop).
+    3. Otherwise → True (ambiguous title; pass through to Haiku classifier).
+
+    The allowlist check takes priority: a title that contains both an allowlist
+    pattern and a denylist pattern (e.g. "Data Scientist QA Lead") passes.
+    """
+    if _TITLE_ALLOWLIST.search(title):
+        return True
+    if _TITLE_DENYLIST.search(title):
+        return False
+    return True  # unknown title — pass to Haiku classifier
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +317,10 @@ def _check_location(posting: AnyPosting, config: "FilterConfig") -> str | None:
     for municipality in active_list:
         if municipality.lower() in loc:
             return None  # pass
+
+    # Pass if location is broadly Canadian (from "Canada" location search)
+    if "canada" in loc and not _is_non_canadian(loc):
+        return None  # pass
 
     # Pass if remote-allowed AND posting is remote AND Canadian context
     if config.allow_remote and _is_remote_posting(posting):

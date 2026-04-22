@@ -1,0 +1,17 @@
+search:
+  terms:
+    - "data scientist"
+    - "machine learning engineer"
+    - "applied scientist"
+    - "data analyst"
+  locations:
+    - "Vancouver, BC, Canada"
+    - "Canada"
+  results_wanted_per_term_location: 30
+  hours_old: 72
+
+dedup:
+  window_days: 90
+
+logging:
+  run_logs_dir: "logs"
