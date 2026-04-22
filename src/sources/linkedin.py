@@ -67,6 +67,7 @@ class LinkedInSource(JobSource):
                 location=query.location,
                 results_wanted=results_wanted,
                 hours_old=query.hours_old,
+                linkedin_fetch_description=True,  # fetches full description by visiting each posting URL
             )
         except Exception as exc:
             exc_str = str(exc).lower()
