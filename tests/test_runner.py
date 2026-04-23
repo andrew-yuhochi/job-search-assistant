@@ -469,9 +469,19 @@ def test_classification_stub_inserted_for_each_stored_job(engine):
     """
     For each job that passes filters and is stored, a classifications row
     with specialty_name='Unclassified' must be written.
+
+    Each job must have a distinct title+company fingerprint so the cross-source
+    dedup stage (Stage 5) does not merge them into a single cluster.
     """
+    distinct_titles = ["Data Scientist", "Machine Learning Engineer", "Applied Scientist"]
+    distinct_companies = ["Alpha Corp", "Beta Inc", "Gamma Ltd"]
     jobs = [
-        _make_job_posting(job_id=f"job-{i}", url=f"https://www.linkedin.com/jobs/view/{i}")
+        _make_job_posting(
+            job_id=f"job-{i}",
+            url=f"https://www.linkedin.com/jobs/view/{i}",
+            title=distinct_titles[i],
+            company=distinct_companies[i],
+        )
         for i in range(3)
     ]
     raws = [
