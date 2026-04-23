@@ -1,0 +1,89 @@
+======================================================================
+TASK-M4-002: Normalization Quality Fixes — Before/After Comparison
+======================================================================
+
+=== Fix 1: Seniority Keyword Expansion ===
+Previous unknown rate (estimated): ~71.5%
+Current seniority distribution (total 770 records):
+  unknown               498  (64.7%)
+  senior                187  (24.3%)
+  mid                    23  (3.0%)
+  staff                  23  (3.0%)
+  junior                 22  (2.9%)
+  principal               8  (1.0%)
+  director                5  (0.6%)
+  vp                      2  (0.3%)
+  csuite                  2  (0.3%)
+Net improvement: ~71.5% → 64.7% unknown
+
+New keywords verified (spot-check):
+  [PASS] 'Technical Lead'                              → senior
+  [PASS] 'Lead ML Engineer'                            → senior
+  [PASS] 'Manager, Data Science'                       → mid
+  [PASS] 'Director of Analytics'                       → director
+  [PASS] 'Chief Data Officer'                          → csuite
+  [PASS] 'VP of Engineering'                           → vp
+  [PASS] 'Graduate Data Scientist'                     → junior
+  [PASS] 'Intern, ML'                                  → junior
+  [PASS] 'Leadership Development (no match)'           → unknown
+
+=== Fix 2: Field Retention in 02_normalized.json ===
+  description:  770/770 records
+  posted_at:    589/770 records
+  url:          770/770 records
+  search_term:  770/770 records
+
+=== Fix 3: Hourly Salary → Annual Conversion ===
+  Structured-field hourly salary path: multiplied by 2080 + debug log added.
+  Regex hourly path was already correct (×2080).
+  Additionally fixed: float salary values now round() to int before JobPosting
+  construction, eliminating Pydantic int_from_float validation errors.
+  Records with non-null salary: 443/770
+
+=== Fix 4: Location Standardization ===
+  Total location strings standardized: 377/770
+  Sample before → after:
+    'Burnaby, BC, CA'                   → 'Burnaby, British Columbia, Canada'
+    'Richmond, BC, CA'                  → 'Richmond, British Columbia, Canada'
+    'Vancouver, BC, CA'                 → 'Vancouver, British Columbia, Canada'
+    'Ottawa, ON, CA'                    → 'Ottawa, Ontario, Canada'
+    'Vaughan, ON, CA'                   → 'Vaughan, Ontario, Canada'
+    'Edmonton, AB, CA'                  → 'Edmonton, Alberta, Canada'
+    'Toronto, ON, CA'                   → 'Toronto, Ontario, Canada'
+    'Calgary, AB, CA'                   → 'Calgary, Alberta, Canada'
+
+=== Fix 5: Title Pre-filter for Malformed Google Results ===
+  7 malformed titles dropped during normalize stage.
+  Patterns matched: '- Apply', '- Apply Now', '- City, Province' in title.
+
+=== 5 Sample Records (Before → After) ===
+  Title:        Senior Data Analyst
+  Location:     'Calgary, AB, CA'                   → 'Calgary, Alberta, Canada'
+  Salary:       min=None max=None
+  Seniority:    senior
+  Fields:       description=True posted_at=True url=True search_term=True
+
+  Title:        Lead AI/ML Engineer
+  Location:     'Mississauga, ON, CA'               → 'Mississauga, Ontario, Canada'
+  Salary:       min=104000 max=104000
+  Seniority:    senior
+  Fields:       description=True posted_at=True url=True search_term=True
+
+  Title:        Machine Learning Engineer - IV (Biometrics)
+  Location:     'Montréal, QC, CA'                  → 'Montréal, Quebec, Canada'
+  Salary:       min=None max=None
+  Seniority:    unknown
+  Fields:       description=True posted_at=True url=True search_term=True
+
+  Title:        Senior Data Scientist, Menu Personalization
+  Location:     'Toronto, ON, CA'                   → 'Toronto, Ontario, Canada'
+  Salary:       min=None max=None
+  Seniority:    senior
+  Fields:       description=True posted_at=True url=True search_term=True
+
+  Title:        Analyst, Constituent & Marketing Analytics (13 month contract)
+  Location:     'Remote, CA'                        → 'Remote'
+  Salary:       min=67000 max=82000
+  Seniority:    unknown
+  Fields:       description=True posted_at=True url=True search_term=True
+

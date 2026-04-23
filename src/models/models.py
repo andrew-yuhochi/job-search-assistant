@@ -141,6 +141,16 @@ class RawJobPosting(BaseModel):
         description="Ground-truth label used for fixture seeding (TASK-009). "
                     "Not present in live-scraped data.",
     )
+    # Search term that produced this posting — set by fetch_multi() on each source.
+    # Allows breakdown of results by term in stage logs and analytics.
+    search_term: Optional[str] = Field(None, description="Search term that produced this posting")
+
+    # Structured salary fields from jobspy (LinkedIn / Indeed).
+    # Checked by SalaryExtractor BEFORE falling back to regex on description text.
+    salary_min_raw: Optional[float] = Field(None, description="jobspy min_amount as scraped")
+    salary_max_raw: Optional[float] = Field(None, description="jobspy max_amount as scraped")
+    salary_currency: Optional[str] = Field(None, description="ISO currency code from jobspy, e.g. 'CAD'")
+    salary_interval: Optional[str] = Field(None, description="jobspy interval: 'yearly' | 'hourly' | etc.")
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +252,9 @@ class JobPosting(BaseModel):
 
     # Seniority (populated by SeniorityInferrer)
     seniority: SeniorityLevel = SeniorityLevel.unknown
+
+    # Search provenance (TASK-M4-002 Fix 2 — retained from RawJobPosting)
+    search_term: Optional[str] = Field(None, description="Search term that produced this posting")
 
     # Company size (from scraper)
     company_employees_label: Optional[str] = None

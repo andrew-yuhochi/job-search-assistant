@@ -96,6 +96,7 @@ def load_raw_postings(json_path: Path) -> list[RawJobPosting]:
                 salary_currency=rec.get("salary_currency"),
                 salary_interval=rec.get("salary_interval"),
                 posted_date=rec.get("posted_date") or "",
+                search_term=rec.get("search_term"),
             )
             postings.append(posting)
         except Exception as exc:
@@ -140,39 +141,27 @@ def main() -> None:
     # 3. Run replay pipeline
     # ------------------------------------------------------------------
     print()
+    source_run_dir = json_path.parent  # the directory containing 01_fetch_raw.json
     config = ScrapeConfig(filter_config=FilterConfig())
     runner = ScrapeRunner(registry=None, engine=engine, config=config)  # type: ignore[arg-type]
 
     result = runner.run_from_raw(
         raw_postings,
         status_callback=lambda msg: print(f"[PIPELINE] {msg}"),
+        source_run_dir=source_run_dir,
     )
 
     # ------------------------------------------------------------------
     # 4. Summary
     # ------------------------------------------------------------------
-    from src.runner.scrape_runner import ScrapeRunner as _SR  # noqa: F401 (already imported)
-    import yaml  # noqa: E402
-
-    _project_root = Path(__file__).parent.parent
-    _config_path = _project_root / "config" / "scrape_config.yaml"
-    try:
-        with open(_config_path, encoding="utf-8") as fh:
-            _cfg = yaml.safe_load(fh) or {}
-    except Exception:
-        _cfg = {}
-
-    logs_dir = (
-        Path(_cfg.get("logging", {}).get("run_logs_dir", "logs"))
-        / f"run_{result.run_id}"
-    )
-
     dup_removed = result.duplicate_count
 
     print()
     print("=" * 40)
     print("REPLAY PIPELINE SUMMARY")
     print("=" * 40)
+    print(f"Source run:             {source_run_dir / '01_fetch_raw.json'}")
+    print(f"Output run:             {result.run_dir}/")
     print(f"Loaded (raw):           {result.fetched}")
     print(f"After normalize:        {result.normalized}")
     print(f"After hard filter:      (see 03_hard_filter.json)")
@@ -180,7 +169,7 @@ def main() -> None:
     print(f"After cross-src dedup:  (see 05_cross_source_dedup.json)")
     print(f"After cross-run dedup:  {result.after_dedup}  ({dup_removed} total duplicates removed)")
     print(f"Stored to DB:           {result.stored}")
-    print(f"Stage logs written to:  {logs_dir}/")
+    print(f"Stage logs written to:  {result.run_dir}/")
     print("=" * 40)
     print()
 
@@ -188,6 +177,7 @@ def main() -> None:
         print("Errors:")
         for src, err in result.errors.items():
             print(f"  {src}: {err}")
+
 
 
 if __name__ == "__main__":

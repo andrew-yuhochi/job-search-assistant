@@ -110,8 +110,11 @@ class SalaryExtractor:
             lo = salary_min_raw
             hi = salary_max_raw if salary_max_raw is not None else salary_min_raw
 
-            # Annualise if hourly
+            # Annualise if hourly (Fix 3: log conversion for debugging)
             if salary_interval and salary_interval.lower() == "hourly":
+                logger.debug(
+                    "Hourly salary converted to annual: %s * 2080", salary_min_raw
+                )
                 lo = round(lo * HOURS_PER_YEAR)
                 hi = round(hi * HOURS_PER_YEAR)
             elif salary_interval and salary_interval.lower() == "monthly":

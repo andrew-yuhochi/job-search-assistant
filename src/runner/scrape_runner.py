@@ -16,6 +16,9 @@ Stages (in order):
 Cheap operations (hard filter, title filter, cross-source dedup) run before the expensive
 cross-run DB dedup and enrichment, so the LLM/API calls only process survivors.
 
+Run directory naming: logs/run_{YYYYMMDD_HHMMSS}/ — timestamp-based, never overwritten.
+run_from_raw() always writes to a fresh directory; it never touches the source run's directory.
+
 Per TDD §2 data flow diagram and TASK-M4-001.
 """
 from __future__ import annotations
@@ -84,11 +87,14 @@ class ScrapeConfig:
 @dataclass
 class ScrapeRunResult:
     """
-    Structured result returned from ScrapeRunner.run().
+    Structured result returned from ScrapeRunner.run() and run_from_raw().
 
     Counts represent postings at each pipeline stage. rate_limited_sources
     lists source names that returned HTTP 429; errors maps source name → error
     message for sources that failed with a non-rate-limit error.
+
+    run_dir is the timestamp-named directory where stage logs were written
+    (e.g. logs/run_20260422_143052/).  Always set; never None after a successful run.
     """
     run_id: int
     fetched: int
@@ -98,6 +104,7 @@ class ScrapeRunResult:
     after_filter: int         # postings that passed hard filters
     stored: int               # rows successfully written to jobs table
     classified_stub: int      # classifications stub rows written
+    run_dir: Optional[Path] = None   # timestamp-named stage-log directory
     rate_limited_sources: list[str] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
     elapsed_seconds: float = 0.0
@@ -186,20 +193,33 @@ class ScrapeRunner:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _write_stage_log(self, run_id: int, stage_file: str, data: Any) -> None:
+    def _make_run_dir(self) -> Path:
+        """
+        Create and return a fresh, timestamp-named run directory.
+
+        Format: logs/run_{YYYYMMDD_HHMMSS}/
+
+        Microseconds are used to break ties when two runs start within the same
+        wall-clock second (common in tests).  exist_ok=False is intentional —
+        if by extreme coincidence the directory already exists, we raise rather
+        than silently sharing it with another run.
+        """
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        base = Path(self._scrape_cfg.get("logging", {}).get("run_logs_dir", "logs"))
+        run_dir = base / f"run_{ts}"
+        run_dir.mkdir(parents=True, exist_ok=False)
+        return run_dir
+
+    def _write_stage_log(self, run_dir: Path, stage_file: str, data: Any) -> None:
         """
         Write a JSON diagnostic log file for a pipeline stage.
 
-        Files are written to logs/run_{run_id}/{stage_file}.  Failures are
-        swallowed and logged as warnings — stage logs must never crash the pipeline.
+        Files are written to run_dir/{stage_file}.  run_dir must have been
+        created by _make_run_dir() before the first call.  Failures are swallowed
+        and logged as warnings — stage logs must never crash the pipeline.
         """
         try:
-            log_dir = (
-                Path(self._scrape_cfg.get("logging", {}).get("run_logs_dir", "logs"))
-                / f"run_{run_id}"
-            )
-            log_dir.mkdir(parents=True, exist_ok=True)
-            with open(log_dir / stage_file, "w") as f:
+            with open(run_dir / stage_file, "w") as f:
                 json.dump(data, f, indent=2, default=str)
         except Exception as exc:
             logger.warning(
@@ -468,6 +488,9 @@ class ScrapeRunner:
             if status_callback:
                 status_callback(msg)
 
+        # --- Create a fresh, timestamp-named run directory for stage logs ---
+        run_dir = self._make_run_dir()
+
         # --- Open scrape_run row ---
         run_id = repository.insert_scrape_run(
             self._engine,
@@ -510,9 +533,18 @@ class ScrapeRunner:
         fetched_count = len(raw_postings)
         _status(f"Fetched {fetched_count} total raw postings")
 
-        # Stage 1 diagnostic log — all RawJobPosting fields for complete replay input
+        # Stage 1 diagnostic log — all RawJobPosting fields for complete replay input.
+        # Safety assertion: 01_fetch_raw.json must not already exist in this directory.
+        # With timestamp-named directories this should never trigger; the assertion is
+        # a last-resort guard against accidental overwrites.
+        _raw_log_path = run_dir / "01_fetch_raw.json"
+        if _raw_log_path.exists():
+            raise RuntimeError(
+                f"01_fetch_raw.json already exists in {run_dir} — "
+                "this should never happen with timestamp-named run directories."
+            )
         self._write_stage_log(
-            run_id,
+            run_dir,
             "01_fetch_raw.json",
             [
                 {
@@ -522,6 +554,7 @@ class ScrapeRunner:
                     "location": p.location,
                     "source": p.source.value,
                     "url": p.url,
+                    "search_term": getattr(p, "search_term", None),
                     "description": getattr(p, "description", None),
                     "salary_raw": getattr(p, "salary_raw", None),
                     "salary_min_raw": getattr(p, "salary_min_raw", None),
@@ -539,9 +572,14 @@ class ScrapeRunner:
         # ----------------------------------------------------------------
         _status("Normalizing postings…")
         normalized: list[JobPosting] = []
+        malformed_title_count = 0
         for raw in raw_postings:
             try:
                 job = self._normalizer.normalize(raw)
+                if job is None:
+                    # Fix 5: malformed title detected — skip this record
+                    malformed_title_count += 1
+                    continue
                 normalized.append(job)
             except Exception as exc:
                 logger.warning(
@@ -550,11 +588,17 @@ class ScrapeRunner:
                     exc,
                 )
         normalized_count = len(normalized)
-        _status(f"Normalized {normalized_count} postings")
+        if malformed_title_count:
+            _status(
+                f"Normalized {normalized_count} postings "
+                f"({malformed_title_count} dropped: malformed title)"
+            )
+        else:
+            _status(f"Normalized {normalized_count} postings")
 
-        # Stage 2 diagnostic log
+        # Stage 2 diagnostic log — Fix 2: include search_term, url, posted_at, description
         self._write_stage_log(
-            run_id,
+            run_dir,
             "02_normalized.json",
             [
                 {
@@ -566,6 +610,10 @@ class ScrapeRunner:
                     "salary_max_cad": j.salary_max_cad,
                     "seniority": j.seniority.value,
                     "source": j.source.value,
+                    "url": j.url,
+                    "posted_at": j.posted_at.isoformat() if j.posted_at else None,
+                    "description": j.description,
+                    "search_term": j.search_term,
                 }
                 for j in normalized
             ],
@@ -595,7 +643,7 @@ class ScrapeRunner:
                 for p, r in filter_result.excluded
             ]
         )
-        self._write_stage_log(run_id, "03_hard_filter.json", hard_filter_log)
+        self._write_stage_log(run_dir, "03_hard_filter.json", hard_filter_log)
 
         # ----------------------------------------------------------------
         # Stage 4: Title relevance filter (cheap — runs before enrichment and dedup)
@@ -624,7 +672,7 @@ class ScrapeRunner:
             f"Title filter: {len(title_filter_survivors)} kept, "
             f"{len(title_filter_log) - len(title_filter_survivors)} dropped"
         )
-        self._write_stage_log(run_id, "04_title_filter.json", title_filter_log)
+        self._write_stage_log(run_dir, "04_title_filter.json", title_filter_log)
 
         # ----------------------------------------------------------------
         # Stage 5: Cross-source dedup (NEW — catches same job on LinkedIn + Indeed)
@@ -638,7 +686,7 @@ class ScrapeRunner:
             f"Cross-source dedup: {len(cross_source_survivors)} kept, "
             f"{cross_source_dup_count} within-batch duplicates removed"
         )
-        self._write_stage_log(run_id, "05_cross_source_dedup.json", cross_source_log)
+        self._write_stage_log(run_dir, "05_cross_source_dedup.json", cross_source_log)
 
         # ----------------------------------------------------------------
         # Stage 6: Cross-run dedup (against existing DB rows)
@@ -717,7 +765,7 @@ class ScrapeRunner:
                     "decision": "within_run_dup",
                     "matched_job_id": None,
                 })
-        self._write_stage_log(run_id, "06_cross_run_dedup.json", cross_run_dedup_log)
+        self._write_stage_log(run_dir, "06_cross_run_dedup.json", cross_run_dedup_log)
 
         # ----------------------------------------------------------------
         # Stage 7: Salary extraction + seniority enrichment
@@ -751,7 +799,7 @@ class ScrapeRunner:
 
         # Stage 7 diagnostic log (post-enrichment, survivors only)
         self._write_stage_log(
-            run_id,
+            run_dir,
             "07_enriched.json",
             [
                 {
@@ -831,7 +879,7 @@ class ScrapeRunner:
         _status(f"Stored {stored_count} jobs, wrote {classified_stub_count} classification stubs")
 
         # Stage 8 (stored) diagnostic log
-        self._write_stage_log(run_id, "08_stored.json", list(stored_job_ids))
+        self._write_stage_log(run_dir, "08_stored.json", list(stored_job_ids))
 
         # ----------------------------------------------------------------
         # Stage 9: Update scrape_run row with final counts + error log
@@ -860,6 +908,7 @@ class ScrapeRunner:
             after_filter=len(kept_jobs),
             stored=stored_count,
             classified_stub=classified_stub_count,
+            run_dir=run_dir,
             rate_limited_sources=rate_limited,
             errors=source_errors,
             elapsed_seconds=round(elapsed, 2),
@@ -881,6 +930,7 @@ class ScrapeRunner:
         self,
         raw_postings: list[RawJobPosting],
         status_callback: Optional[Callable[[str], None]] = None,
+        source_run_dir: Optional[Path] = None,
     ) -> ScrapeRunResult:
         """
         Execute all post-processing pipeline stages starting from pre-loaded
@@ -891,9 +941,17 @@ class ScrapeRunner:
         scrape_run DB row is created so replay results are distinguishable from
         the original run.
 
+        This method NEVER writes 01_fetch_raw.json — the source data already
+        exists in source_run_dir and must not be modified.  Stage logs start
+        from 02_normalized.json.  The output is always written to a fresh
+        timestamp-named run directory, never back into source_run_dir.
+
         Args:
             raw_postings:    Pre-loaded list of RawJobPosting objects.
             status_callback: Optional callable(message: str) for progress updates.
+            source_run_dir:  Path to the original run directory that was replayed.
+                             When set, provenance is logged to replay_provenance.json
+                             in the new run directory.
 
         Returns:
             ScrapeRunResult with per-stage counts, identical structure to run().
@@ -905,6 +963,10 @@ class ScrapeRunner:
             if status_callback:
                 status_callback(msg)
 
+        # --- Create a fresh, timestamp-named run directory for stage logs ---
+        # This is NEVER the same as source_run_dir.
+        run_dir = self._make_run_dir()
+
         # --- Open scrape_run row ---
         run_id = repository.insert_scrape_run(
             self._engine,
@@ -915,28 +977,24 @@ class ScrapeRunner:
 
         fetched_count = len(raw_postings)
 
-        # Stage 1 diagnostic log — write replay input so it is inspectable
-        self._write_stage_log(
-            run_id,
-            "01_fetch_raw.json",
-            [
-                {
-                    "id": p.id,
-                    "title": p.title,
-                    "company": p.company,
-                    "location": p.location,
-                    "source": p.source.value,
-                    "url": p.url,
-                    "description": getattr(p, "description", None),
-                    "salary_raw": getattr(p, "salary_raw", None),
-                    "salary_min_raw": getattr(p, "salary_min_raw", None),
-                    "salary_max_raw": getattr(p, "salary_max_raw", None),
-                    "salary_currency": getattr(p, "salary_currency", None),
-                    "salary_interval": getattr(p, "salary_interval", None),
-                    "posted_date": getattr(p, "posted_date", None),
-                }
-                for p in raw_postings
-            ],
+        # Write provenance metadata so the output directory is self-documenting.
+        # 01_fetch_raw.json is intentionally NOT written here — the source data
+        # lives in source_run_dir and must not be duplicated or overwritten.
+        provenance = {
+            "replay": True,
+            "source_run_dir": str(source_run_dir) if source_run_dir else None,
+            "source_fetch_raw": (
+                str(source_run_dir / "01_fetch_raw.json") if source_run_dir else None
+            ),
+            "output_run_dir": str(run_dir),
+            "replayed_at": datetime.now(timezone.utc).isoformat(),
+            "raw_posting_count": fetched_count,
+        }
+        self._write_stage_log(run_dir, "replay_provenance.json", provenance)
+        logger.info(
+            "ScrapeRunner(replay): source=%s output=%s",
+            source_run_dir,
+            run_dir,
         )
 
         # ----------------------------------------------------------------
@@ -944,9 +1002,14 @@ class ScrapeRunner:
         # ----------------------------------------------------------------
         _status("Normalizing postings…")
         normalized: list[JobPosting] = []
+        malformed_title_count = 0
         for raw in raw_postings:
             try:
                 job = self._normalizer.normalize(raw)
+                if job is None:
+                    # Fix 5: malformed title detected — skip this record
+                    malformed_title_count += 1
+                    continue
                 normalized.append(job)
             except Exception as exc:
                 logger.warning(
@@ -955,10 +1018,17 @@ class ScrapeRunner:
                     exc,
                 )
         normalized_count = len(normalized)
-        _status(f"Normalized {normalized_count} postings")
+        if malformed_title_count:
+            _status(
+                f"Normalized {normalized_count} postings "
+                f"({malformed_title_count} dropped: malformed title)"
+            )
+        else:
+            _status(f"Normalized {normalized_count} postings")
 
+        # Stage 2 diagnostic log — Fix 2: include search_term, url, posted_at, description
         self._write_stage_log(
-            run_id,
+            run_dir,
             "02_normalized.json",
             [
                 {
@@ -970,6 +1040,10 @@ class ScrapeRunner:
                     "salary_max_cad": j.salary_max_cad,
                     "seniority": j.seniority.value,
                     "source": j.source.value,
+                    "url": j.url,
+                    "posted_at": j.posted_at.isoformat() if j.posted_at else None,
+                    "description": j.description,
+                    "search_term": j.search_term,
                 }
                 for j in normalized
             ],
@@ -998,7 +1072,7 @@ class ScrapeRunner:
                 for p, r in filter_result.excluded
             ]
         )
-        self._write_stage_log(run_id, "03_hard_filter.json", hard_filter_log)
+        self._write_stage_log(run_dir, "03_hard_filter.json", hard_filter_log)
 
         # ----------------------------------------------------------------
         # Stage 4: Title relevance filter (cheap — runs before enrichment and dedup)
@@ -1027,7 +1101,7 @@ class ScrapeRunner:
             f"Title filter: {len(title_filter_survivors)} kept, "
             f"{len(title_filter_log) - len(title_filter_survivors)} dropped"
         )
-        self._write_stage_log(run_id, "04_title_filter.json", title_filter_log)
+        self._write_stage_log(run_dir, "04_title_filter.json", title_filter_log)
 
         # ----------------------------------------------------------------
         # Stage 5: Cross-source dedup (NEW — catches same job on LinkedIn + Indeed)
@@ -1041,7 +1115,7 @@ class ScrapeRunner:
             f"Cross-source dedup: {len(cross_source_survivors)} kept, "
             f"{cross_source_dup_count} within-batch duplicates removed"
         )
-        self._write_stage_log(run_id, "05_cross_source_dedup.json", cross_source_log)
+        self._write_stage_log(run_dir, "05_cross_source_dedup.json", cross_source_log)
 
         # ----------------------------------------------------------------
         # Stage 6: Cross-run dedup (against existing DB rows)
@@ -1109,7 +1183,7 @@ class ScrapeRunner:
                     "decision": "within_run_dup",
                     "matched_job_id": None,
                 })
-        self._write_stage_log(run_id, "06_cross_run_dedup.json", cross_run_dedup_log)
+        self._write_stage_log(run_dir, "06_cross_run_dedup.json", cross_run_dedup_log)
 
         # ----------------------------------------------------------------
         # Stage 7: Salary extraction + seniority enrichment
@@ -1140,7 +1214,7 @@ class ScrapeRunner:
                 logger.warning("ScrapeRunner(replay): seniority inference failed: %s", exc)
 
         self._write_stage_log(
-            run_id,
+            run_dir,
             "07_enriched.json",
             [
                 {
@@ -1213,7 +1287,7 @@ class ScrapeRunner:
                 )
 
         _status(f"Stored {stored_count} jobs, wrote {classified_stub_count} classification stubs")
-        self._write_stage_log(run_id, "08_stored.json", list(stored_job_ids))
+        self._write_stage_log(run_dir, "08_stored.json", list(stored_job_ids))
 
         # ----------------------------------------------------------------
         # Stage 9: Update scrape_run row
@@ -1238,6 +1312,7 @@ class ScrapeRunner:
             after_filter=len(kept_jobs),
             stored=stored_count,
             classified_stub=classified_stub_count,
+            run_dir=run_dir,
             rate_limited_sources=[],
             errors={},
             elapsed_seconds=round(elapsed, 2),
